@@ -1,0 +1,242 @@
+  - path: /actions
+    type: directory
+    contents:
+    - path: /actions/chart.ts
+      type: file
+    - path: /actions/chat-name.ts
+      type: file
+    - path: /actions/get-chats.ts
+      type: file
+    - path: /actions/logout.ts
+      type: file
+    - path: /actions/run-sql.ts
+      type: file
+    - path: /actions/validate-db-connection.ts
+      type: file
+    - path: /actions/validate-openai-key.ts
+      type: file
+  - path: /app
+    type: directory
+    contents:
+    - path: /app/(auth-pages)
+      type: directory
+      contents:
+      - path: /app/(auth-pages)/layout.tsx
+        type: file
+      - path: /app/(auth-pages)/login
+        type: directory
+        contents:
+        - path: /app/(auth-pages)/login/page.tsx
+          type: file
+    - path: /app/api
+      type: directory
+      contents:
+      - path: /app/api/auth
+        type: directory
+        contents:
+        - path: /app/api/auth/callback
+          type: directory
+          contents:
+          - path: /app/api/auth/callback/route.ts
+            type: file
+      - path: /app/api/chat
+        type: directory
+        contents:
+        - path: /app/api/chat/route.ts
+          type: file
+        - path: /app/api/chat/utils.ts
+          type: file
+    - path: /app/app
+      type: directory
+      contents:
+      - path: /app/app/layout.tsx
+        type: file
+      - path: /app/app/page.tsx
+        type: file
+      - path: /app/app/[id]
+        type: directory
+        contents:
+        - path: /app/app/[id]/page.tsx
+          type: file
+    - path: /app/favicon.ico
+      type: file
+    - path: /app/globals.css
+      type: file
+    - path: /app/layout.tsx
+      type: file
+    - path: /app/logo.svg
+      type: file
+    - path: /app/opengraph-image.png
+      type: file
+    - path: /app/page.tsx
+      type: file
+    - path: /app/twitter-image.png
+      type: file
+  - path: /components
+    type: directory
+    contents:
+    - path: /components/app-sidebar-items.tsx
+      type: file
+    - path: /components/app-sidebar.tsx
+      type: file
+    - path: /components/chat-interface.tsx
+      type: file
+    - path: /components/chat-name.tsx
+      type: file
+    - path: /components/chat.tsx
+      type: file
+    - path: /components/code-block.tsx
+      type: file
+    - path: /components/column-resizer.tsx
+      type: file
+    - path: /components/connection-form.tsx
+      type: file
+    - path: /components/dynamic-chart.tsx
+      type: file
+    - path: /components/flipping-words.tsx
+      type: file
+    - path: /components/form.tsx
+      type: file
+    - path: /components/hero.tsx
+      type: file
+    - path: /components/how-it-works.tsx
+      type: file
+    - path: /components/navbar.tsx
+      type: file
+    - path: /components/new-chat-sidebar.tsx
+      type: file
+    - path: /components/next-logo.tsx
+      type: file
+    - path: /components/open-source-section.tsx
+      type: file
+    - path: /components/sidebar-link.tsx
+      type: file
+    - path: /components/sql-result.tsx
+      type: file
+    - path: /components/submit-button.tsx
+      type: file
+    - path: /components/table.tsx
+      type: file
+    - path: /components/tailwind-indicator.tsx
+      type: file
+    - path: /components/text-skeleton.tsx
+      type: file
+    - path: /components/theme-switcher.tsx
+      type: file
+    - path: /components/ui
+      type: directory
+      contents:
+      - path: /components/ui/badge.tsx
+        type: file
+      - path: /components/ui/button.tsx
+        type: file
+      - path: /components/ui/card.tsx
+        type: file
+      - path: /components/ui/chart.tsx
+        type: file
+      - path: /components/ui/checkbox.tsx
+        type: file
+      - path: /components/ui/dropdown-menu.tsx
+        type: file
+      - path: /components/ui/form.tsx
+        type: file
+      - path: /components/ui/input.tsx
+        type: file
+      - path: /components/ui/label.tsx
+        type: file
+      - path: /components/ui/select.tsx
+        type: file
+      - path: /components/ui/separator.tsx
+        type: file
+      - path: /components/ui/sheet.tsx
+        type: file
+      - path: /components/ui/sidebar.tsx
+        type: file
+      - path: /components/ui/skeleton.tsx
+        type: file
+      - path: /components/ui/spotlight.tsx
+        type: file
+      - path: /components/ui/table.tsx
+        type: file
+      - path: /components/ui/textarea.tsx
+        type: file
+      - path: /components/ui/toast.tsx
+        type: file
+      - path: /components/ui/toaster.tsx
+        type: file
+      - path: /components/ui/tooltip.tsx
+        type: file
+  - path: /components.json
+    type: file
+  - path: /database.types.ts
+    type: file
+  - path: /hooks
+    type: directory
+    contents:
+    - path: /hooks/use-app-local-storage.ts
+      type: file
+    - path: /hooks/use-is-mounted.ts
+      type: file
+    - path: /hooks/use-mobile.tsx
+      type: file
+    - path: /hooks/use-toast.ts
+      type: file
+  - path: /lib
+    type: directory
+    contents:
+    - path: /lib/chart.ts
+      type: file
+    - path: /lib/rechart-format.ts
+      type: file
+    - path: /lib/utils.ts
+      type: file
+  - path: /middleware.ts
+    type: file
+  - path: /next.config.js
+    type: file
+  - path: /package.json
+    type: file
+  - path: /pnpm-lock.yaml
+    type: file
+  - path: /postcss.config.js
+    type: file
+  - path: /README.md
+    type: file
+  - path: /run-sql.png
+    type: file
+  - path: /schemas
+    type: directory
+    contents:
+    - path: /schemas/connection-string-form.schemas.ts
+      type: file
+  - path: /sql.png
+    type: file
+  - path: /state
+    type: directory
+    contents:
+    - path: /state/index.ts
+      type: file
+  - path: /stats.png
+    type: file
+  - path: /tailwind.config.ts
+    type: file
+  - path: /tsconfig.json
+    type: file
+  - path: /utils
+    type: directory
+    contents:
+    - path: /utils/cn.ts
+      type: file
+    - path: /utils/supabase
+      type: directory
+      contents:
+      - path: /utils/supabase/check-env-vars.ts
+        type: file
+      - path: /utils/supabase/client.ts
+        type: file
+      - path: /utils/supabase/middleware.ts
+        type: file
+      - path: /utils/supabase/server.ts
+        type: file
+    - path: /utils/utils.ts
+      type: file

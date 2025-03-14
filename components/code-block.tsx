@@ -1,7 +1,7 @@
 'use client'
 
 import { Check, Copy, BarChart3 } from 'lucide-react'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { runSql } from '@/actions/run-sql'
@@ -35,6 +35,7 @@ function CodeBlock({
   setSqlResult,
   isDisabled,
   connectionString,
+  autoRun = true,
 }: {
   children: React.ReactNode
   language?: string
@@ -42,6 +43,7 @@ function CodeBlock({
   setSqlResult: (result: QueryResult<unknown[]> | string) => void
   isDisabled?: boolean
   connectionString: string
+  autoRun?: boolean
 }) {
   useEffect(() => {
     Prism.highlightAll()
@@ -51,22 +53,9 @@ function CodeBlock({
   const [showChart, setShowChart] = useState(false)
   const [chartConfig, setChartConfig] = useState<Config | null>(null)
   const [isChartLoading, setIsChartLoading] = useState(false)
-
-  const copyToClipboard = async () => {
-    try {
-      navigator.clipboard.writeText(children as string)
-      setCopied(true)
-      setTimeout(() => {
-        setCopied(false)
-      }, 1000)
-    } catch (error) {
-      console.error('Failed to copy to clipboard', error)
-    }
-  }
-
   const [isLoading, setIsLoading] = useState(false)
 
-  const run = async () => {
+  const run = useCallback(async () => {
     if (!children?.toString()) {
       toast({
         title: 'No SQL query provided',
@@ -90,6 +79,24 @@ function CodeBlock({
     }
 
     setIsLoading(false)
+  }, [children, connectionString, setSqlResult])
+
+  useEffect(() => {
+    if (language === 'sql' && autoRun && !sqlResult && !isDisabled && children?.toString()) {
+      run()
+    }
+  }, [language, children, isDisabled, sqlResult, autoRun, run])
+
+  const copyToClipboard = async () => {
+    try {
+      navigator.clipboard.writeText(children as string)
+      setCopied(true)
+      setTimeout(() => {
+        setCopied(false)
+      }, 1000)
+    } catch (error) {
+      console.error('Failed to copy to clipboard', error)
+    }
   }
 
   const handleShowChart = async () => {
@@ -178,7 +185,7 @@ function CodeBlock({
         </>
       ) : null}
 
-      {language === 'sql' && (
+      {language === 'sql' && !autoRun && (
         <Button
           disabled={isDisabled}
           aria-disabled={isDisabled}

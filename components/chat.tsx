@@ -203,6 +203,7 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
                                               result
                                             )
                                           }
+                                          autoRun={language === 'sql'}
                                         >
                                           {children}
                                         </CodeBlock>
@@ -296,6 +297,7 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
                                           result
                                         )
                                       }
+                                      autoRun={language === 'sql'}
                                     >
                                       {children}
                                     </CodeBlock>
