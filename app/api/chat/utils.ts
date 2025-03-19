@@ -1,4 +1,5 @@
 import { Client as PGClient } from 'pg'
+import { DIOCESE_CONFIG } from '@/config/diocese'
 
 export async function getPublicTablesWithColumns(connectionString: string) {
   const client = new PGClient(connectionString)
@@ -42,16 +43,8 @@ export async function getPublicTablesWithColumns(connectionString: string) {
 
     // Add diocese-specific information to relevant tables
     return tablesWithColumns.map(table => {
-      // List of tables that require diocese filtering
-      const dioceseProtectedTables = [
-        'testing_center',
-        'testing_sections',
-        'testing_section_students',
-        'users'
-      ]
-
       // Check if this table needs diocese filtering
-      const needsDioceseFilter = dioceseProtectedTables.includes(table.tableName)
+      const needsDioceseFilter = DIOCESE_CONFIG.protectedTables.includes(table.tableName)
 
       // Check if this table has a direct diocese_id column
       const hasDioceseColumn = table.columns.some(col => col.name === 'diocese_id')
@@ -80,11 +73,11 @@ export async function getPublicTablesWithColumns(connectionString: string) {
 SELECT *
 FROM ${table.tableName} t
 ${joinPath === 'Direct access - contains diocese_id' 
-  ? `WHERE t.diocese_id = 43`
+  ? `WHERE t.diocese_id = ${DIOCESE_CONFIG.id}`
   : `JOIN testing_section_students tss ON tss.${table.tableName}_id = t.id
 JOIN testing_sections ts ON ts.id = tss.testing_section_id
 JOIN testing_centers tc ON tc.id = ts.testing_center_id
-WHERE tc.diocese_id = 43`}`
+WHERE tc.diocese_id = ${DIOCESE_CONFIG.id}`}`
         } : undefined
       }
     })

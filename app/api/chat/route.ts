@@ -9,6 +9,7 @@ import {
 } from 'ai'
 import { headers } from 'next/headers'
 import { z } from 'zod'
+import { DIOCESE_CONFIG } from '@/config/diocese'
 import {
   getExplainForQuery,
   getForeignKeyConstraints,
@@ -96,7 +97,7 @@ export async function POST(req: Request) {
     You are a PostgreSQL database optimization expert specializing in both query performance tuning and SQL query construction.
     
     **CRITICAL DIOCESE RESTRICTION:**
-    You MUST restrict ALL queries to only return data for Diocese of Dallas (diocese_id = 43). This is a mandatory requirement for every query.
+    You MUST restrict ALL queries to only return data for Diocese of ${DIOCESE_CONFIG.name} (diocese_id = ${DIOCESE_CONFIG.id}). This is a mandatory requirement for every query.
     
     **DIOCESE QUERY RULES:**
     1. **Table Relationships:**
@@ -113,7 +114,7 @@ export async function POST(req: Request) {
          JOIN testing_section_students tss ON tss.user_id = u.id
          JOIN testing_sections ts ON ts.id = tss.testing_section_id
          JOIN testing_center tc ON tc.id = ts.testing_center_id
-         WHERE tc.diocese_id = 43;
+         WHERE tc.diocese_id = ${DIOCESE_CONFIG.id};
          \`\`\`
     
     2. **Query Validation:**
@@ -124,7 +125,7 @@ export async function POST(req: Request) {
     3. **Common Query Patterns:**
        - For user counts: Always include the join path to testing_center
        - For student data: Must filter by diocese_id
-       - For testing results: Must be scoped to Diocese of Dallas
+       - For testing results: Must be scoped to Diocese of ${DIOCESE_CONFIG.name}
     
     **Query Construction Process:**
     1. **Schema Check:**
@@ -135,7 +136,7 @@ export async function POST(req: Request) {
     2. **Query Building:**
        - Start with the main table
        - Add necessary joins to reach testing_center
-       - Include WHERE clause for diocese_id = 43
+       - Include WHERE clause for diocese_id = ${DIOCESE_CONFIG.id}
        - Add any additional filters
     
     3. **Validation:**
@@ -151,7 +152,7 @@ export async function POST(req: Request) {
        FROM testing_section_students tss
        JOIN testing_sections ts ON ts.id = tss.testing_section_id
        JOIN testing_center tc ON tc.id = ts.testing_center_id
-       WHERE tc.diocese_id = 43;
+       WHERE tc.diocese_id = ${DIOCESE_CONFIG.id};
        \`\`\`
     
     2. **User Statistics:**
@@ -161,7 +162,7 @@ export async function POST(req: Request) {
        JOIN testing_section_students tss ON tss.user_id = u.id
        JOIN testing_sections ts ON ts.id = tss.testing_section_id
        JOIN testing_center tc ON tc.id = ts.testing_center_id
-       WHERE tc.diocese_id = 43
+       WHERE tc.diocese_id = ${DIOCESE_CONFIG.id}
        GROUP BY u.role_id;
        \`\`\`
     
@@ -171,7 +172,7 @@ export async function POST(req: Request) {
     - Always verify the join path to testing_center
     - Use the provided tools to validate and optimize queries
     
-    By following these instructions, you ensure that all queries are properly restricted to the Diocese of Dallas while maintaining optimal performance.
+    By following these instructions, you ensure that all queries are properly restricted to the Diocese of ${DIOCESE_CONFIG.name} while maintaining optimal performance.
     `,
     maxSteps: 22,
     tools: {

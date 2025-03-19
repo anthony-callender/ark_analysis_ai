@@ -1,6 +1,7 @@
 'use server'
 
 import { Client } from 'pg'
+import { DIOCESE_CONFIG } from '@/config/diocese'
 
 export async function runSql(sql: string, connectionString: string) {
   // Convert SQL to lowercase for case-insensitive checks
@@ -31,35 +32,22 @@ export async function runSql(sql: string, connectionString: string) {
   }
 
   // 2. Diocese safety check
-  // List of tables that require diocese filtering
-  const dioceseProtectedTables = [
-    'testing_center',
-    'testing_sections',
-    'testing_section_students',
-    'users',
-    'students',
-    'test_results',
-    'scores'
-  ]
-
   // Check if query involves any protected tables
-  const hasProtectedTable = dioceseProtectedTables.some(table => 
+  const hasProtectedTable = DIOCESE_CONFIG.protectedTables.some(table => 
     sqlLower.includes(table)
   )
 
   // Check for proper diocese filter
   const hasDioceseFilter = 
-    sqlLower.includes('diocese_id = 43') || 
-    sqlLower.includes('diocese_id=43') ||
-    sqlLower.includes('tc.diocese_id = 43') ||
-    sqlLower.includes('tc.diocese_id=43')
-
-
+    sqlLower.includes(`diocese_id = ${DIOCESE_CONFIG.id}`) || 
+    sqlLower.includes(`diocese_id=${DIOCESE_CONFIG.id}`) ||
+    sqlLower.includes(`tc.diocese_id = ${DIOCESE_CONFIG.id}`) ||
+    sqlLower.includes(`tc.diocese_id=${DIOCESE_CONFIG.id}`)
 
   // If query involves protected tables but doesn't have proper restrictions
   if (hasProtectedTable) {
     if (!hasDioceseFilter) {
-      return 'Query must include diocese_id = 43 filter for security reasons'
+      return `Query must include diocese_id = ${DIOCESE_CONFIG.id} filter for security reasons`
     }
   }
 
