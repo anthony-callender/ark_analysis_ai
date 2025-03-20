@@ -31,7 +31,7 @@ export async function runSql(sql: string, connectionString: string) {
     return `This action is not allowed ${action}`
   }
 
-  // 2. Diocese safety check
+  // 2. Diocese and Testing Center safety check
   // Check if query involves any protected tables
   const hasProtectedTable = DIOCESE_CONFIG.protectedTables.some(table => 
     sqlLower.includes(table)
@@ -44,10 +44,29 @@ export async function runSql(sql: string, connectionString: string) {
     sqlLower.includes(`tc.diocese_id = ${DIOCESE_CONFIG.id}`) ||
     sqlLower.includes(`tc.diocese_id=${DIOCESE_CONFIG.id}`)
 
+  // Check for proper testing center filter
+  const hasTestingCenterFilter = 
+    sqlLower.includes(`testing_center_id = ${DIOCESE_CONFIG.testingCenterId}`) ||
+    sqlLower.includes(`testing_center_id=${DIOCESE_CONFIG.testingCenterId}`) ||
+    sqlLower.includes(`tc.id = ${DIOCESE_CONFIG.testingCenterId}`) ||
+    sqlLower.includes(`tc.id=${DIOCESE_CONFIG.testingCenterId}`)
+
   // If query involves protected tables but doesn't have proper restrictions
   if (hasProtectedTable) {
-    if (!hasDioceseFilter) {
-      return `Query must include diocese_id = ${DIOCESE_CONFIG.id} filter for security reasons`
+    // Diocese managers only need diocese filter
+    if (DIOCESE_CONFIG.role === 'diocese_manager') {
+      if (!hasDioceseFilter) {
+        return `Query must include diocese_id = ${DIOCESE_CONFIG.id} filter for security reasons`
+      }
+    } 
+    // School managers need both filters
+    else {
+      if (!hasDioceseFilter) {
+        return `Query must include diocese_id = ${DIOCESE_CONFIG.id} filter for security reasons`
+      }
+      if (!hasTestingCenterFilter) {
+        return `Query must include testing_center_id = ${DIOCESE_CONFIG.testingCenterId} filter for security reasons`
+      }
     }
   }
 
