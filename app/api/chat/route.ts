@@ -107,11 +107,36 @@ export async function POST(req: Request) {
     }
     This is a mandatory requirement for every query.
     
+    **SCORE CALCULATION RULES:**
+    For any queries involving student scores (knowledge, math, theology, reading):
+    - Score columns in testing_section_students:
+      * knowledge_score: Raw score achieved
+      * knowledge_total: Maximum possible score
+    - Score calculation formula: (knowledge_score / knowledge_total) * 100
+    - Subject areas are stored in the subject_areas table:
+      * Common subjects: 'Math', 'Reading', 'Theology'
+      * Join path: testing_section_students → subject_areas
+    - Example:
+      \`\`\`sql
+      -- Calculate average math score percentage
+      SELECT 
+        AVG((tss.knowledge_score::float / tss.knowledge_total) * 100) as avg_math_score_percent
+      FROM testing_section_students tss
+      JOIN testing_sections ts ON ts.id = tss.testing_section_id
+      JOIN testing_centers tc ON tc.id = ts.testing_center_id
+      JOIN subject_areas sa ON tss.subject_area_id = sa.id
+      WHERE tc.diocese_id = ${DIOCESE_CONFIG.id}
+      ${DIOCESE_CONFIG.role === 'school_manager' ? `AND tc.id = ${DIOCESE_CONFIG.testingCenterId}` : ''}
+      AND sa.name = 'Math';
+      \`\`\`
+    
     **QUERY RULES:**
     1. **Table Relationships:**
        - ALWAYS join back to testing_center table to get diocese_id
        ${DIOCESE_CONFIG.role === 'school_manager' ? '- For school managers, also get testing_center_id' : ''}
        - Use this join path: table → testing_section_students → testing_sections → testing_center
+       - For subject-specific queries: JOIN subject_areas ON testing_section_students.subject_area_id = subject_areas.id
+       - Optional: JOIN dioceses ON testing_centers.diocese_id = dioceses.id (for diocese details)
        - Example:
          \`\`\`sql
          -- INCORRECT (no filters):
@@ -132,12 +157,16 @@ export async function POST(req: Request) {
          - diocese_id = ${DIOCESE_CONFIG.id}
          ${DIOCESE_CONFIG.role === 'school_manager' ? `- testing_center_id = ${DIOCESE_CONFIG.testingCenterId}` : ''}
        - Check that all relevant tables are properly joined to testing_center
+       - For subject-specific queries, verify proper join to subject_areas table
        - Ensure no data from unauthorized dioceses or testing centers can leak through
+       - For score calculations, always cast to float before division
     
     3. **Common Query Patterns:**
        - For user counts: Always include the required filters
        - For student data: Must filter by diocese_id${DIOCESE_CONFIG.role === 'school_manager' ? ' and testing_center_id' : ''}
        - For testing results: Must be scoped to specific diocese${DIOCESE_CONFIG.role === 'school_manager' ? ' and testing center' : ''}
+       - For score calculations: Use (score::float / total) * 100
+       - For subject-specific queries: Filter using sa.name IN ('Math', 'Reading', 'Theology')
     
     **Query Construction Process:**
     1. **Schema Check:**
@@ -148,10 +177,11 @@ export async function POST(req: Request) {
     2. **Query Building:**
        - Start with the main table
        - Add necessary joins to reach testing_center
+       - Add subject_areas join if querying specific subjects
        - Include WHERE clause for required filters:
          - diocese_id = ${DIOCESE_CONFIG.id}
          ${DIOCESE_CONFIG.role === 'school_manager' ? `- testing_center_id = ${DIOCESE_CONFIG.testingCenterId}` : ''}
-       - Add any additional filters
+       - Add any additional filters (e.g., subject area)
     
     3. **Validation:**
        - Verify all joins are correct
@@ -160,26 +190,55 @@ export async function POST(req: Request) {
     
     **Example Scenarios:**
     
-    1. **Counting Students:**
+    1. **Counting Students by Subject:**
        \`\`\`sql
-       SELECT COUNT(DISTINCT tss.user_id) as student_count
+       SELECT sa.name as subject, COUNT(DISTINCT tss.user_id) as student_count
        FROM testing_section_students tss
        JOIN testing_sections ts ON ts.id = tss.testing_section_id
        JOIN testing_centers tc ON tc.id = ts.testing_center_id
-       WHERE tc.diocese_id = ${DIOCESE_CONFIG.id}
-       ${DIOCESE_CONFIG.role === 'school_manager' ? `AND tc.id = ${DIOCESE_CONFIG.testingCenterId}` : ''};
-       \`\`\`
-    
-    2. **User Statistics:**
-       \`\`\`sql
-       SELECT u.role_id, COUNT(*) as user_count
-       FROM users u
-       JOIN testing_section_students tss ON tss.user_id = u.id
-       JOIN testing_sections ts ON ts.id = tss.testing_section_id
-       JOIN testing_centers tc ON tc.id = ts.testing_center_id
+       JOIN subject_areas sa ON tss.subject_area_id = sa.id
        WHERE tc.diocese_id = ${DIOCESE_CONFIG.id}
        ${DIOCESE_CONFIG.role === 'school_manager' ? `AND tc.id = ${DIOCESE_CONFIG.testingCenterId}` : ''}
-       GROUP BY u.role_id;
+       GROUP BY sa.name
+       ORDER BY sa.name;
+       \`\`\`
+    
+    2. **Subject Score Analysis:**
+       \`\`\`sql
+       SELECT 
+         sa.name as subject,
+         ts.name as section_name,
+         COUNT(tss.id) as student_count,
+         AVG((tss.knowledge_score::float / tss.knowledge_total) * 100) as avg_score_percent
+       FROM testing_section_students tss
+       JOIN testing_sections ts ON ts.id = tss.testing_section_id
+       JOIN testing_centers tc ON tc.id = ts.testing_center_id
+       JOIN subject_areas sa ON tss.subject_area_id = sa.id
+       WHERE tc.diocese_id = ${DIOCESE_CONFIG.id}
+       ${DIOCESE_CONFIG.role === 'school_manager' ? `AND tc.id = ${DIOCESE_CONFIG.testingCenterId}` : ''}
+       GROUP BY sa.name, ts.name
+       ORDER BY sa.name, ts.name;
+       \`\`\`
+
+    3. **Detailed Score Report:**
+       \`\`\`sql
+       SELECT 
+         d.name as diocese_name,
+         tc.name as testing_center_name,
+         sa.name as subject,
+         COUNT(tss.id) as total_tests,
+         AVG((tss.knowledge_score::float / tss.knowledge_total) * 100) as avg_score_percent,
+         MIN((tss.knowledge_score::float / tss.knowledge_total) * 100) as min_score_percent,
+         MAX((tss.knowledge_score::float / tss.knowledge_total) * 100) as max_score_percent
+       FROM testing_section_students tss
+       JOIN testing_sections ts ON ts.id = tss.testing_section_id
+       JOIN testing_centers tc ON tc.id = ts.testing_center_id
+       JOIN dioceses d ON tc.diocese_id = d.id
+       JOIN subject_areas sa ON tss.subject_area_id = sa.id
+       WHERE tc.diocese_id = ${DIOCESE_CONFIG.id}
+       ${DIOCESE_CONFIG.role === 'school_manager' ? `AND tc.id = ${DIOCESE_CONFIG.testingCenterId}` : ''}
+       GROUP BY d.name, tc.name, sa.name
+       ORDER BY d.name, tc.name, sa.name;
        \`\`\`
     
     **Remember:**
@@ -187,6 +246,8 @@ export async function POST(req: Request) {
     - Never return data from unauthorized dioceses or testing centers
     - Always verify the join path to testing_centers
     - Use the provided tools to validate and optimize queries
+    - For score calculations, always use (score::float / total) * 100
+    - For subject-specific queries, always join to subject_areas table
     
     By following these instructions, you ensure that all queries are properly restricted based on the user's role while maintaining optimal performance.
     `,
