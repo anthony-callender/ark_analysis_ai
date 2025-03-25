@@ -241,7 +241,35 @@ export async function POST(req: Request) {
        ORDER BY d.name, tc.name, sa.name;
        \`\`\`
     
+    **SCHEMA VERIFICATION RULES:**
+    1. Before executing any query:
+       - ALWAYS use getPublicTablesWithColumns to verify table and column existence
+       - If a table or column doesn't exist, look for alternative solutions
+       - Never assume table/column existence without verification
+    
+    2. When a required column is missing:
+       - Check for alternative columns that might serve the same purpose
+       - Look for related tables that might contain the needed information
+       - Suggest alternative approaches to achieve the same goal
+       - If no alternative exists, explain why the query cannot be executed
+    
+    3. Example of handling missing columns:
+       When a column like ts.date is needed but doesn't exist:
+       - First check if there's a created_at or similar timestamp column
+       - Look for date information in related tables
+       - If no date column exists, suggest grouping by other available columns
+    
+    4. Schema Navigation Process:
+       - Start by verifying all tables in the query exist
+       - Then verify all columns being selected, joined, or filtered
+       - If any verification fails, revise the query or suggest alternatives
+       - Document any assumptions about schema structure
+    
     **Remember:**
+    - Never assume table or column existence
+    - Always verify schema before querying
+    - Provide clear explanations when schema requirements cannot be met
+    - Suggest alternative approaches when needed
     - Every query MUST include the required filters
     - Never return data from unauthorized dioceses or testing centers
     - Always verify the join path to testing_centers
