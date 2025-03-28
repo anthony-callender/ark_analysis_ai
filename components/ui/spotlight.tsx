@@ -3,7 +3,7 @@ import React from 'react'
 import { useTheme } from 'next-themes'
 import { cn } from '@/lib/utils'
 
-type SpotlightProps = {
+interface SpotlightProps {
   className?: string
   fill?: string
 }
@@ -11,8 +11,8 @@ type SpotlightProps = {
 export const Spotlight = ({ className, fill }: SpotlightProps) => {
   const { theme } = useTheme()
 
-  const spotlightColor = theme === 'light' ? 'black' : (fill || 'white')
-  const spotlightOpacity = theme === 'light' ? '0.1' : '0.21'
+  const spotlightColor = theme === 'light' ? '#18467F' : '#00397F'
+  const spotlightOpacity = theme === 'light' ? '0.05' : '0.15'
 
   return (
     <svg

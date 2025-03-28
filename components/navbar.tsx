@@ -29,7 +29,7 @@ export default function Navbar({ user }: { user: User }) {
             <Button
               variant={'ghost'}
               onClick={() => {
-                const email = 'montonenicolas01@gmail.com'
+                const email = 'tony@fuzati.com'
                 try {
                   navigator.clipboard.writeText(email)
                   toast({

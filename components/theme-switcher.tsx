@@ -8,51 +8,35 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Laptop, Moon, Sun } from 'lucide-react'
+import { Moon, Sun, Laptop } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useIsMounted } from '@/hooks/use-is-mounted'
+
+const ICON_SIZE = 16
 
 const ThemeSwitcher = () => {
   const mounted = useIsMounted()
 
-  const { theme, setTheme } = useTheme()
+  const { setTheme, theme } = useTheme()
 
   if (!mounted) {
     return null
   }
 
-  const ICON_SIZE = 16
-
   return (
-    <div className="fixed right-4 bottom-4 z-10">
+    <div className="flex items-center gap-2">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size={'sm'}>
-            {theme === 'light' ? (
-              <Sun
-                key="light"
-                size={ICON_SIZE}
-                className={'text-muted-foreground'}
-              />
-            ) : theme === 'dark' ? (
-              <Moon
-                key="dark"
-                size={ICON_SIZE}
-                className={'text-muted-foreground'}
-              />
-            ) : (
-              <Laptop
-                key="system"
-                size={ICON_SIZE}
-                className={'text-muted-foreground'}
-              />
-            )}
+          <Button variant="ghost" size="icon">
+            <Sun size={ICON_SIZE} className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+            <Moon className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+            <span className="sr-only">Toggle theme</span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent className="w-content" align="start">
           <DropdownMenuRadioGroup
             value={theme}
-            onValueChange={(e) => setTheme(e)}
+            onValueChange={(value: string) => setTheme(value)}
           >
             <DropdownMenuRadioItem className="flex gap-2" value="light">
               <Sun size={ICON_SIZE} className="text-muted-foreground" />{' '}
@@ -73,4 +57,4 @@ const ThemeSwitcher = () => {
   )
 }
 
-export { ThemeSwitcher }
+export default ThemeSwitcher
