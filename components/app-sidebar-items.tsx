@@ -85,7 +85,7 @@ export function AppSidebarItems({
       {filteredItems?.map((item) => (
         <SidebarMenuItem key={item.title}>
           <SidebarGroupLabel>
-            <h3 className="text-lg font-medium p-1 text-foreground">
+            <h3 className="text-lg font-medium p-1 text-sidebar-foreground">
               {item.title}
             </h3>
           </SidebarGroupLabel>
