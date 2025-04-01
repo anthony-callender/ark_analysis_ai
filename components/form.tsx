@@ -100,7 +100,7 @@ export function Form({ onChange, onSubmit, value }: Props) {
             }
           }}
           placeholder={
-            conversationStarted ? 'Ask anything about your DB...' : ''
+            conversationStarted ? 'Ask anything...' : ''
           }
           value={value}
           className="resize-none w-full p-4 rounded-lg min-h-[56px] bg-background border focus:ring-2 focus:ring-primary/20 transition-all duration-200"

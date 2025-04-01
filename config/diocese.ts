@@ -1,10 +1,10 @@
-export type UserRole = 'diocese_manager' | 'school_manager'
+export type UserRole = 'diocese_manager' | 'school_manager' | 'super_admin'
 
 export const DIOCESE_CONFIG = {
   name: 'Tucson',
   id: 5,
   testingCenterId: 51,
-  role: 'diocese_manager' as UserRole, // default role
+  role: 'super_admin' as UserRole, // default role
   protectedTables: [
     'testing_centers',
     'testing_sections',

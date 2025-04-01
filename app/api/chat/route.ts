@@ -195,8 +195,11 @@ export async function POST(req: Request) {
 
       2. **Query Validation:**
          - Before executing any query, verify it includes the required filters:
-           - diocese_id = ${DIOCESE_CONFIG.id}
-           ${DIOCESE_CONFIG.role === 'school_manager' ? `- testing_center_id = ${DIOCESE_CONFIG.testingCenterId}` : ''}
+           ${DIOCESE_CONFIG.role === 'super_admin' 
+             ? '// Super admin has no filter restrictions (except dangerous operations)'
+             : `- diocese_id = ${DIOCESE_CONFIG.id}
+                ${DIOCESE_CONFIG.role === 'school_manager' ? `- testing_center_id = ${DIOCESE_CONFIG.testingCenterId}` : ''}`
+           }
          - Check that all relevant tables are properly joined to testing_center
          - For subject-specific queries, verify proper join to subject_areas table
          - Ensure no data from unauthorized dioceses or testing centers can leak through
