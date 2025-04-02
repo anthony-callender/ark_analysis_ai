@@ -188,12 +188,77 @@ export async function POST(req: Request) {
       **QUERY RULES:**
       1. **Table Relationships:**
          - ALWAYS join back to testing_center table to get diocese_id
-         
          - Use this join path: table → testing_section_students → testing_sections → testing_center
          - For subject-specific queries: JOIN subject_areas ON testing_section_students.subject_area_id = subject_areas.id
          - Optional: JOIN dioceses ON testing_centers.diocese_id = dioceses.id (for diocese details)
 
-      2. **Query Validation:**
+      2. **ID Usage Rules:**
+         - ALWAYS use IDs (not names) for:
+           * GROUP BY clauses
+           * JOIN conditions
+           * Aggregations (SUM, AVG, COUNT, etc.)
+           * Calculations
+           * Filtering
+           * DISTINCT operations
+         - Names should ONLY be used for display purposes
+         - Common ID fields to use:
+           * testing_center_id (not testing_center.name)
+           * diocese_id (not diocese.name)
+           * testing_section_id (not testing_section.name)
+           * user_id (not user.name or user.username)
+           * subject_area_id (not subject_area.name)
+         - Example of correct usage:
+           \`\`\`sql
+           -- CORRECT: Group by ID, display name
+           SELECT 
+             tc.id as testing_center_id,
+             tc.name as testing_center_name,
+             AVG(score) as avg_score
+           FROM scores s
+           JOIN testing_centers tc ON s.testing_center_id = tc.id
+           GROUP BY tc.id, tc.name
+           ORDER BY avg_score DESC;
+           
+           -- INCORRECT: Grouping by name
+           SELECT 
+             tc.name as testing_center_name,
+             AVG(score) as avg_score
+           FROM scores s
+           JOIN testing_centers tc ON s.testing_center_id = tc.id
+           GROUP BY tc.name
+           ORDER BY avg_score DESC;
+           \`\`\`
+         - When displaying results:
+           * Include both ID and name in SELECT
+           * Use ID for all operations
+           * Use name only for display
+           * Always join to get the name after calculations are done
+
+      3. **NULL Handling Rules:**
+         - ALWAYS handle NULL values in your queries using appropriate functions:
+           * Use COALESCE to provide default values: COALESCE(column_name, default_value)
+           * Use NULLIF to prevent division by zero: NULLIF(denominator, 0)
+           * Use IS NULL/IS NOT NULL for explicit NULL checks
+           * Use CASE WHEN for complex NULL handling logic
+         - Common NULL handling patterns:
+           * For numeric calculations: COALESCE(column_name, 0)
+           * For text fields: COALESCE(column_name, '')
+           * For dates: COALESCE(column_name, CURRENT_DATE)
+           * For boolean fields: COALESCE(column_name, false)
+         - When joining tables:
+           * Use LEFT JOIN when NULL values are expected
+           * Use COALESCE on joined columns that might be NULL
+           * Consider using CASE WHEN to handle NULL join results
+         - When aggregating:
+           * Use COALESCE with aggregate functions: COALESCE(SUM(column_name), 0)
+           * Handle NULL in GROUP BY columns
+           * Consider NULL in HAVING clauses
+         - When comparing:
+           * Use IS NULL/IS NOT NULL instead of = NULL
+           * Consider NULL in BETWEEN and IN clauses
+           * Handle NULL in ORDER BY clauses
+
+      4. **Query Validation:**
          - Before executing any query, verify it includes the required filters:
            ${DIOCESE_CONFIG.role === 'super_admin' 
              ? '// Super admin has no filter restrictions (except dangerous operations)'
@@ -204,6 +269,7 @@ export async function POST(req: Request) {
          - For subject-specific queries, verify proper join to subject_areas table
          - Ensure no data from unauthorized dioceses or testing centers can leak through
          - For score calculations, always cast to float before division
+         - Verify NULL handling for all columns that might contain NULL values
 
       **SCHEMA VERIFICATION RULES:**
       1. Before executing any query:
