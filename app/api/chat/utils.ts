@@ -1,5 +1,12 @@
 import { Client as PGClient } from 'pg'
 import { DIOCESE_CONFIG } from '@/config/diocese'
+import {
+  QUESTION_REFERENCES,
+  NULL_HANDLING_PATTERNS,
+  TABLE_RELATIONSHIPS,
+  SCORE_CALCULATION,
+  ROLE_TYPES
+} from '@/config/prompt-references'
 
 export async function getPublicTablesWithColumns(connectionString: string) {
   const client = new PGClient(connectionString)
@@ -302,4 +309,216 @@ export async function getForeignKeyConstraints(connectionString: string) {
     await client.end()
     return `Error fetching foreign key constraints: ${error}`
   }
+}
+
+export const determineQueryType = (query: string): string[] => {
+  const types: string[] = [];
+  
+  // Check for question-related queries
+  if (query.toLowerCase().includes('eucharist') || 
+      query.toLowerCase().includes('mass') || 
+      query.toLowerCase().includes('baptism')) {
+    types.push('question_analysis');
+  }
+  
+  // Check for score-related queries
+  if (query.toLowerCase().includes('score') || 
+      query.toLowerCase().includes('average') || 
+      query.toLowerCase().includes('calculation')) {
+    types.push('score_calculation');
+  }
+  
+  // Check for NULL handling
+  if (query.toLowerCase().includes('null') || 
+      query.toLowerCase().includes('coalesce') || 
+      query.toLowerCase().includes('nullif')) {
+    types.push('null_handling');
+  }
+  
+  // Always include table relationships
+  types.push('table_relationships');
+  
+  return types;
+};
+
+export const getReferenceSection = (types: string[]) => {
+  const references = [];
+  
+  if (types.includes('question_analysis')) {
+    references.push(`
+    **Question References:**
+    ${Object.entries(QUESTION_REFERENCES)
+      .map(([key, value]) => 
+        `${value.text} (id = ${value.id}):
+        ${Object.entries(value.answers)
+          .map(([id, text]) => `- ${id} = ${text}`)
+          .join('\n        ')}`
+      )
+      .join('\n\n    ')}
+    `);
+  }
+  
+  if (types.includes('score_calculation')) {
+    references.push(`
+    **Score Calculation:**
+    Formula: ${SCORE_CALCULATION.formula}
+    Common Subjects: ${SCORE_CALCULATION.common_subjects.join(', ')}
+    `);
+  }
+  
+  if (types.includes('null_handling')) {
+    references.push(`
+    **NULL Handling Patterns:**
+    ${Object.entries(NULL_HANDLING_PATTERNS)
+      .map(([type, pattern]) => `- ${type}: ${pattern}`)
+      .join('\n    ')}
+    `);
+  }
+  
+  if (types.includes('table_relationships')) {
+    references.push(`
+    **Table Relationships:**
+    Core Tables:
+    ${Object.entries(TABLE_RELATIONSHIPS.core)
+      .map(([table, desc]) => `- ${table}: ${desc}`)
+      .join('\n    ')}
+    
+    User Tables:
+    ${Object.entries(TABLE_RELATIONSHIPS.user)
+      .map(([table, desc]) => `- ${table}: ${desc}`)
+      .join('\n    ')}
+    
+    Organizational Tables:
+    ${Object.entries(TABLE_RELATIONSHIPS.organizational)
+      .map(([table, desc]) => `- ${table}: ${desc}`)
+      .join('\n    ')}
+    `);
+  }
+  
+  return references.join('\n\n');
+};
+
+export interface QueryValidationResult {
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+export async function validateQuery(query: string, connectionString: string): Promise<QueryValidationResult> {
+  const result: QueryValidationResult = {
+    isValid: true,
+    errors: [],
+    warnings: []
+  };
+
+  // 1. Check for NULL handling
+  const nullHandlingChecks = [
+    { 
+      pattern: /knowledge_score\s*\/\s*knowledge_total/, 
+      required: [
+        'WHERE knowledge_score IS NOT NULL',
+        'WHERE knowledge_total IS NOT NULL',
+        'WHERE knowledge_total > 0',
+        SCORE_CALCULATION.formula
+      ],
+      description: 'score calculation'
+    }
+  ];
+
+  for (const check of nullHandlingChecks) {
+    if (check.pattern.test(query)) {
+      for (const required of check.required) {
+        if (!query.includes(required)) {
+          result.errors.push(`Missing proper NULL handling in ${check.description}. Must include: ${required}`);
+          result.isValid = false;
+        }
+      }
+    }
+  }
+
+  // 2. Check for ID usage in operations
+  const idUsageChecks = [
+    { operation: 'GROUP BY', pattern: /GROUP BY\s+([^;]+)/gi },
+    { operation: 'JOIN', pattern: /JOIN\s+[^\s]+\s+ON\s+([^;]+)\s*=/gi },
+    { operation: 'WHERE', pattern: /WHERE\s+([^;]+)/gi },
+    { operation: 'DISTINCT', pattern: /DISTINCT\s+([^;]+)/gi }
+  ];
+
+  for (const check of idUsageChecks) {
+    const matches = Array.from(query.matchAll(check.pattern));
+    for (const match of matches) {
+      const columns = match[1].split(',').map(col => col.trim());
+      for (const column of columns) {
+        if (column.includes('name') && !column.includes('id')) {
+          result.errors.push(`Using name instead of ID in ${check.operation} operation: ${column}`);
+          result.isValid = false;
+        }
+      }
+    }
+  }
+
+  // 3. Check for role-based filtering
+  if (query.includes('testing_section_students') || query.includes('user_answers')) {
+    const roleCheck = query.includes(`role = ${ROLE_TYPES.teachers}`) || 
+                     query.includes(`role = ${ROLE_TYPES.students}`);
+    if (!roleCheck) {
+      result.errors.push(`Missing valid role filter. Must use role = ${ROLE_TYPES.teachers} for teachers or role = ${ROLE_TYPES.students} for students`);
+      result.isValid = false;
+    }
+  }
+
+  // 4. Check for diocese and testing center filters
+  if (DIOCESE_CONFIG.role !== 'super_admin') {
+    if (!query.includes(`diocese_id = ${DIOCESE_CONFIG.id}`)) {
+      result.errors.push(`Missing diocese_id filter: diocese_id = ${DIOCESE_CONFIG.id}`);
+      result.isValid = false;
+    }
+    if (DIOCESE_CONFIG.role === 'school_manager' && !query.includes(`testing_center_id = ${DIOCESE_CONFIG.testingCenterId}`)) {
+      result.errors.push(`Missing testing_center_id filter: testing_center_id = ${DIOCESE_CONFIG.testingCenterId}`);
+      result.isValid = false;
+    }
+  }
+
+  // 5. Check for column existence
+  const tables = await getPublicTablesWithColumns(connectionString);
+  if (typeof tables === 'string') {
+    result.errors.push(tables);
+    result.isValid = false;
+    return result;
+  }
+
+  // Simple check for columns in SELECT and WHERE clauses
+  const columnPattern = /SELECT\s+([^FROM]+)\s+FROM|WHERE\s+([^;]+)/gi;
+  const matches = Array.from(query.matchAll(columnPattern));
+  
+  for (const match of matches) {
+    const columns = (match[1] || match[2]).split(',').map(col => col.trim());
+    for (const column of columns) {
+      // Skip * and aggregate functions
+      if (column === '*' || column.includes('(')) continue;
+
+      // Get table and column name
+      const [tableName, columnName] = column.split('.').map(part => part.trim());
+      const table = tables.find(t => t.tableName === tableName);
+      
+      if (table && !table.columns.some(col => col.name === columnName)) {
+        result.errors.push(`Column ${columnName} does not exist in table ${tableName}`);
+        result.isValid = false;
+      }
+    }
+  }
+
+  // 6. Check for proper join paths
+  const joinPathChecks = [
+    { table: 'testing_sections', required: 'testing_center' },
+    { table: 'testing_section_students', required: 'testing_sections' }
+  ];
+
+  for (const check of joinPathChecks) {
+    if (query.includes(check.table) && !query.includes(check.required)) {
+      result.warnings.push(`Missing join with ${check.required} table when using ${check.table}`);
+    }
+  }
+
+  return result;
 }
