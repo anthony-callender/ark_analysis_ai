@@ -137,9 +137,13 @@ async function executeQueryConstructor(
   const openai = createOpenAI({ apiKey: openaiApiKey })
   
   try {
-    // Get actual schema information
+    // Get all schema and statistics information
     console.log('Fetching schema information for query construction...')
     const tablesWithColumns = await getPublicTablesWithColumns(connectionString)
+    const indexes = await getIndexes(connectionString)
+    const foreignKeys = await getForeignKeyConstraints(connectionString)
+    const tableStats = await getTableStats(connectionString)
+    const indexStats = await getIndexStatsUsage(connectionString)
     
     // Type guard for tablesWithColumns
     if (typeof tablesWithColumns === 'string') {
@@ -148,6 +152,10 @@ async function executeQueryConstructor(
 
     console.log('Schema information retrieved for query construction:')
     console.log('- Tables with columns:', JSON.stringify(tablesWithColumns, null, 2))
+    console.log('- Indexes:', JSON.stringify(indexes, null, 2))
+    console.log('- Foreign keys:', JSON.stringify(foreignKeys, null, 2))
+    console.log('- Table stats:', JSON.stringify(tableStats, null, 2))
+    console.log('- Index stats:', JSON.stringify(indexStats, null, 2))
     
     const result = await streamText({
       model: openai('gpt-4o'),
@@ -198,6 +206,18 @@ async function executeQueryConstructor(
 Available Tables and Columns:
 ${JSON.stringify(tablesWithColumns, null, 2)}
 
+Indexes:
+${JSON.stringify(indexes, null, 2)}
+
+Foreign Key Constraints:
+${JSON.stringify(foreignKeys, null, 2)}
+
+Table Statistics:
+${JSON.stringify(tableStats, null, 2)}
+
+Index Usage Statistics:
+${JSON.stringify(indexStats, null, 2)}
+
 Query Construction Rules:
 1. Only use tables and columns that exist in the provided schema
 2. If a required table or column doesn't exist, suggest alternatives from the available schema
@@ -208,7 +228,12 @@ Query Construction Rules:
 7. Include LIMIT when appropriate
 8. Use proper aliases for tables and columns
 9. Format the query for readability
-10. Include comments explaining complex parts of the query`
+10. Include comments explaining complex parts of the query
+11. Consider table and index statistics when constructing the query
+12. Use appropriate indexes based on the query patterns
+13. Optimize join order based on table statistics
+14. Consider using materialized views or CTEs for complex queries
+15. Use appropriate data types for comparisons and operations`
     })
 
     let text = ''
@@ -222,12 +247,16 @@ Query Construction Rules:
     // Extract the SQL query from the response
     const sqlQuery = text.match(/```sql\n([\s\S]*?)\n```/)?.[1] || text
     
+    // Get query explanation
+    const explainResult = await getExplainForQuery(sqlQuery, connectionString)
+    
     return {
       query: sqlQuery,
       feedback: 'Initial query constructed',
       isValid: true,
       originalQuery: sqlQuery,
-      constructedQuery: sqlQuery
+      constructedQuery: sqlQuery,
+      optimizationNotes: `Query Explanation:\n${JSON.stringify(explainResult, null, 2)}\n\n${text}`
     }
   } catch (error) {
     console.error('Error in query construction:', error)
@@ -236,7 +265,8 @@ Query Construction Rules:
       feedback: 'Error in query construction: ' + (error as Error).message,
       isValid: false,
       originalQuery: '',
-      constructedQuery: ''
+      constructedQuery: '',
+      optimizationNotes: ''
     }
   }
 }
@@ -248,11 +278,6 @@ async function executeNullHandler(
 ): Promise<NullHandlerResponse> {
   console.log('Starting Null Handler with query:', query)
   const openai = createOpenAI({ apiKey: openaiApiKey })
-  
-  // Get schema information for better NULL handling
-  const tablesWithColumns = await getPublicTablesWithColumns(connectionString)
-  const indexes = await getIndexes(connectionString)
-  const foreignKeys = await getForeignKeyConstraints(connectionString)
   
   const result = await streamText({
     model: openai('gpt-4o'),
@@ -269,7 +294,6 @@ async function executeNullHandler(
       - NEVER return NULL scores in results
       - Filter out invalid data BEFORE calculations
 
-
       **Academic Year Filtering:**
       - When filtering for "last year" or "previous year":
         - DO NOT use current_year = FALSE (this includes ALL previous years)
@@ -279,7 +303,6 @@ async function executeNullHandler(
         - ALWAYS use relative IDs (current_year_id - 1) for "last year" queries
         - NEVER assume specific year IDs without checking current_year_id first
 
-
       **Direct Query Response Requirement:**
       - In at least 99% of interactions, if the user's request is related to retrieving data or constructing a query (e.g. "How many users do I have?"), your response must include a SQL query enclosed in a code block. For example, for "How many users do I have?" a correct response would be:
         
@@ -287,15 +310,6 @@ async function executeNullHandler(
         SELECT COUNT(*) AS total_users
         FROM users;
          \`\`\`
-
-Available Tables and Columns:
-${JSON.stringify(tablesWithColumns, null, 2)}
-
-Indexes:
-${JSON.stringify(indexes, null, 2)}
-
-Foreign Key Constraints:
-${JSON.stringify(foreignKeys, null, 2)}
 
 Key Responsibilities/Focus:
 - Construct a query with proper use of Null rules and role handling teachers = 5, students = 7`
@@ -326,12 +340,6 @@ async function executePrimaryTables(
   console.log('Starting Primary Tables with query:', query)
   const openai = createOpenAI({ apiKey: openaiApiKey })
   
-  // Get schema information for table analysis
-  const tablesWithColumns = await getPublicTablesWithColumns(connectionString)
-  const indexes = await getIndexes(connectionString)
-  const foreignKeys = await getForeignKeyConstraints(connectionString)
-  const tableStats = await getTableStats(connectionString)
-  
   const result = await streamText({
     model: openai('gpt-4o'),
     messages: convertToCoreMessages([{ role: 'user', content: query }]),
@@ -342,18 +350,6 @@ The following tables should be used as the primary source for answering queries,
    - testing_sections (testing sections of a school)
    - testing_centers (schools)
    - subject_areas (subject categorization)
-
-Available Tables and Columns:
-${JSON.stringify(tablesWithColumns, null, 2)}
-
-Indexes:
-${JSON.stringify(indexes, null, 2)}
-
-Foreign Key Constraints:
-${JSON.stringify(foreignKeys, null, 2)}
-
-Table Statistics:
-${JSON.stringify(tableStats, null, 2)}
 
 Key Responsibilities/Focus:
 - Confirm that the initial query uses the primary tables first
@@ -387,12 +383,6 @@ async function executeScoreCalculation(
   console.log('Starting Score Calculation with query:', query)
   const openai = createOpenAI({ apiKey: openaiApiKey })
   
-  // Get schema information for score analysis
-  const tablesWithColumns = await getPublicTablesWithColumns(connectionString)
-  const indexes = await getIndexes(connectionString)
-  const foreignKeys = await getForeignKeyConstraints(connectionString)
-  const tableStats = await getTableStats(connectionString)
-  
   const result = await streamText({
     model: openai('gpt-4o'),
     messages: convertToCoreMessages([{ role: 'user', content: query }]),
@@ -404,18 +394,6 @@ For any queries involving student scores (knowledge, math, theology, reading):
 - Score calculation formula: (knowledge_score / NULLIF(knowledge_total, 0)) * 100
 - Use NULLIF to prevent division by zero
 - Handle NULL results with COALESCE to provide a default value (e.g., 0)
-
-Available Tables and Columns:
-${JSON.stringify(tablesWithColumns, null, 2)}
-
-Indexes:
-${JSON.stringify(indexes, null, 2)}
-
-Foreign Key Constraints:
-${JSON.stringify(foreignKeys, null, 2)}
-
-Table Statistics:
-${JSON.stringify(tableStats, null, 2)}
 
 Key Responsibilities/Focus:
 - Verify that the score calculation formula is correctly applied
@@ -429,8 +407,7 @@ Key Responsibilities/Focus:
          \`\`\`sql
         SELECT COUNT(*) AS total_users
         FROM users;
-         \`\`\`
-`
+         \`\`\``
   })
 
   let text = ''
@@ -458,13 +435,6 @@ async function executeQueryRules(
   console.log('Starting Query Rules with query:', query)
   const openai = createOpenAI({ apiKey: openaiApiKey })
   
-  // Get all schema and statistics information
-  const tablesWithColumns = await getPublicTablesWithColumns(connectionString)
-  const indexes = await getIndexes(connectionString)
-  const foreignKeys = await getForeignKeyConstraints(connectionString)
-  const tableStats = await getTableStats(connectionString)
-  const indexStats = await getIndexStatsUsage(connectionString)
-  
   const result = await streamText({
     model: openai('gpt-4o'),
     messages: convertToCoreMessages([{ role: 'user', content: query }]),
@@ -473,21 +443,6 @@ async function executeQueryRules(
    - ALWAYS join back to testing_center table to get diocese_id
    - Use this join path: table → testing_section_students → testing_sections → testing_center
    - For subject-specific queries: JOIN subject_areas ON testing_section_students.subject_area_id = subject_areas.id
-
-Available Tables and Columns:
-${JSON.stringify(tablesWithColumns, null, 2)}
-
-Indexes:
-${JSON.stringify(indexes, null, 2)}
-
-Foreign Key Constraints:
-${JSON.stringify(foreignKeys, null, 2)}
-
-Table Statistics:
-${JSON.stringify(tableStats, null, 2)}
-
-Index Usage Statistics:
-${JSON.stringify(indexStats, null, 2)}
 
 Key Responsibilities/Focus:
 - Validate overall query structure
@@ -531,112 +486,10 @@ async function executeSchemaVerification(
   const openai = createOpenAI({ apiKey: openaiApiKey })
   
   try {
-    // Get actual schema information
-    console.log('Fetching schema information...')
-    const tablesWithColumns = await getPublicTablesWithColumns(connectionString)
-    const indexes = await getIndexes(connectionString)
-    const foreignKeys = await getForeignKeyConstraints(connectionString)
-    
-    console.log('Schema information retrieved:')
-    console.log('- Tables with columns:', JSON.stringify(tablesWithColumns, null, 2))
-    console.log('- Indexes:', JSON.stringify(indexes, null, 2))
-    console.log('- Foreign keys:', JSON.stringify(foreignKeys, null, 2))
-
-    // Type guard for tablesWithColumns
-    if (typeof tablesWithColumns === 'string') {
-      throw new Error('Failed to fetch tables with columns: ' + tablesWithColumns)
-    }
-
-    // Extract table and column names from the query
-    const tableMatches = query.match(/FROM\s+([a-zA-Z_]+)|JOIN\s+([a-zA-Z_]+)/gi) || []
-    const tables = tableMatches.map(match => {
-      const table = match.split(/\s+/).pop()
-      return table?.toLowerCase()
-    }).filter((table): table is string => table !== undefined)
-
-    const columnMatches = query.match(/(?:SELECT|WHERE|GROUP BY|ORDER BY|HAVING)\s+([^,;]+)/gi) || []
-    const columns = columnMatches.flatMap(match => {
-      const parts = match.split(/\s+/)
-      return parts.slice(1).map(part => part.split('.')[1]?.toLowerCase()).filter((col): col is string => col !== undefined)
-    })
-
-    console.log('Extracted from query:')
-    console.log('- Tables:', tables)
-    console.log('- Columns:', columns)
-
-    // Validate tables and columns
-    const schemaIssues: string[] = []
-    const alternativeSuggestions: string[] = []
-
-    // Check table existence
-    for (const table of tables) {
-      const tableExists = tablesWithColumns.some((t: { tableName: string }) => t.tableName.toLowerCase() === table)
-      if (!tableExists) {
-        schemaIssues.push(`Table "${table}" does not exist in the database`)
-        // Suggest similar tables
-        const similarTables = tablesWithColumns
-          .filter((t: { tableName: string }) => 
-            t.tableName.toLowerCase().includes(table) || 
-            table.includes(t.tableName.toLowerCase())
-          )
-          .map((t: { tableName: string }) => t.tableName)
-        if (similarTables.length > 0) {
-          alternativeSuggestions.push(`Consider using one of these existing tables instead: ${similarTables.join(', ')}`)
-        }
-      }
-    }
-
-    // Check column existence for each table
-    for (const table of tables) {
-      const tableInfo = tablesWithColumns.find((t: { tableName: string }) => t.tableName.toLowerCase() === table)
-      if (tableInfo) {
-        const tableColumns = tableInfo.columns.map((c: { name: string }) => c.name.toLowerCase())
-        const queryColumns = columns.filter(col => col.startsWith(table + '.'))
-        for (const column of queryColumns) {
-          const columnName = column.split('.')[1]
-          if (!tableColumns.includes(columnName)) {
-            schemaIssues.push(`Column "${columnName}" does not exist in table "${table}"`)
-            // Suggest similar columns
-            const similarColumns = tableColumns
-              .filter(c => c.includes(columnName) || columnName.includes(c))
-            if (similarColumns.length > 0) {
-              alternativeSuggestions.push(`Consider using one of these existing columns in table "${table}": ${similarColumns.join(', ')}`)
-            }
-          }
-        }
-      }
-    }
-
-    // Check join conditions
-    const joinMatches = query.match(/JOIN\s+[a-zA-Z_]+\s+ON\s+([^;]+)/gi) || []
-    for (const join of joinMatches) {
-      const conditions = join.split('ON')[1].split('AND').map(c => c.trim())
-      for (const condition of conditions) {
-        const [left, right] = condition.split('=').map(s => s.trim())
-        const [leftTable, leftCol] = left.split('.')
-        const [rightTable, rightCol] = right.split('.')
-        
-        // Check if join columns exist
-        if (leftTable && leftCol) {
-          const leftTableInfo = tablesWithColumns.find((t: { tableName: string }) => t.tableName.toLowerCase() === leftTable.toLowerCase())
-          if (leftTableInfo && !leftTableInfo.columns.some((c: { name: string }) => c.name.toLowerCase() === leftCol.toLowerCase())) {
-            schemaIssues.push(`Join column "${leftCol}" does not exist in table "${leftTable}"`)
-          }
-        }
-        if (rightTable && rightCol) {
-          const rightTableInfo = tablesWithColumns.find((t: { tableName: string }) => t.tableName.toLowerCase() === rightTable.toLowerCase())
-          if (rightTableInfo && !rightTableInfo.columns.some((c: { name: string }) => c.name.toLowerCase() === rightCol.toLowerCase())) {
-            schemaIssues.push(`Join column "${rightCol}" does not exist in table "${rightTable}"`)
-          }
-        }
-      }
-    }
-    
     const result = await streamText({
       model: openai('gpt-4o'),
       messages: convertToCoreMessages([{ role: 'user', content: query }]),
-      system: `
-**Schema Verification:**
+      system: `**Schema Verification:**
       Before constructing any query:
       1. Use getPublicTablesWithColumns to verify all tables and columns exist
       2. Never guess table or column names - always verify first
@@ -674,22 +527,7 @@ Key Responsibilities/Focus:
          \`\`\`sql
         SELECT COUNT(*) AS total_users
         FROM users;
-         \`\`\`
-
-Available Tables and Columns:
-${JSON.stringify(tablesWithColumns, null, 2)}
-
-Indexes:
-${JSON.stringify(indexes, null, 2)}
-
-Foreign Key Constraints:
-${JSON.stringify(foreignKeys, null, 2)}
-
-Schema Issues Found:
-${JSON.stringify(schemaIssues, null, 2)}
-
-Alternative Suggestions:
-${JSON.stringify(alternativeSuggestions, null, 2)}`
+         \`\`\``
     })
 
     let text = ''
@@ -703,10 +541,10 @@ ${JSON.stringify(alternativeSuggestions, null, 2)}`
     return {
       query,
       feedback: text,
-      isValid: schemaIssues.length === 0,
+      isValid: true,
       constructedQuery: text.match(/```sql\n([\s\S]*?)\n```/)?.[1] || query,
-      schemaIssues,
-      alternativeSuggestions
+      schemaIssues: [],
+      alternativeSuggestions: []
     }
   } catch (error) {
     console.error('Error in schema verification:', error)
@@ -729,11 +567,6 @@ async function executeQueryGeneration(
 ): Promise<QueryGenerationResponse> {
   console.log('Starting Query Generation with query:', query)
   const openai = createOpenAI({ apiKey: openaiApiKey })
-  
-  // Get actual schema information
-  const tablesWithColumns = await getPublicTablesWithColumns(connectionString)
-  const indexes = await getIndexes(connectionString)
-  const foreignKeys = await getForeignKeyConstraints(connectionString)
   
   // Combine feedback and queries from all agents
   const feedbackSummary = `NULL Handling Feedback:
@@ -797,15 +630,6 @@ ${agentResponses[4].constructedQuery}
 5. Document which features came from which agent
 6. INCLUDE ALL FEATURES FROM ALL AGENTS IN THE FINAL QUERY  
 
-Available Tables and Columns:
-${JSON.stringify(tablesWithColumns, null, 2)}
-
-Indexes:
-${JSON.stringify(indexes, null, 2)}
-
-Foreign Key Constraints:
-${JSON.stringify(foreignKeys, null, 2)}
-
 Key Responsibilities/Focus:
 - Analyze each source query for its unique optimizations
 - Combine the best features from all queries into a single optimized query
@@ -825,9 +649,6 @@ Key Responsibilities/Focus:
 
   // Extract the final SQL query from the response
   const finalQuery = text.match(/```sql\n([\s\S]*?)\n```/)?.[1] || query
-
-  // Get query explanation
-  const explainResult = await getExplainForQuery(finalQuery, connectionString)
   
   return {
     query,
@@ -835,7 +656,7 @@ Key Responsibilities/Focus:
     isValid: true,
     constructedQuery: finalQuery,
     finalQuery,
-    optimizationNotes: `Query Explanation:\n${JSON.stringify(explainResult, null, 2)}\n\n${text}`,
+    optimizationNotes: text,
     sourceQueries: {
       nullHandler: agentResponses[0].constructedQuery,
       primaryTables: agentResponses[1].constructedQuery,

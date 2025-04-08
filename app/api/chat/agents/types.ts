@@ -7,8 +7,9 @@ export type AgentResponse = {
   constructedQuery: string
 }
 
-export type QueryConstructorResponse = AgentResponse & {
+export interface QueryConstructorResponse extends AgentResponse {
   originalQuery: string
+  optimizationNotes?: string
 }
 
 export type NullHandlerResponse = AgentResponse & {
