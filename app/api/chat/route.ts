@@ -106,10 +106,10 @@ export async function POST(req: Request) {
       ...messages,
       {
         role: 'assistant',
-        content: `Here's the optimized query:\n\n\`\`\`sql\n${workflowResult.query}\n\`\`\`\n\nOptimization Notes:\n${workflowResult.optimizationNotes}`
+        content: `Here's the selected query and reasoning:\n\n\`\`\`sql\n${workflowResult.query}\n\`\`\`\n\nSelection Reasoning:\n${workflowResult.optimizationNotes}`
       }
     ]),
-    system: 'You are a PostgreSQL database optimization expert. Provide clear explanations of the query and its optimizations.'
+    system: 'You are a PostgreSQL database optimization expert. Provide clear explanations of the selected query and the reasoning behind its selection.'
   })
 
   // Update chat history
@@ -123,7 +123,7 @@ export async function POST(req: Request) {
             ...messages,
             {
               role: 'assistant',
-              content: `Here's the optimized query:\n\n\`\`\`sql\n${workflowResult.query}\n\`\`\`\n\nOptimization Notes:\n${workflowResult.optimizationNotes}`
+              content: `Here's the selected query and reasoning:\n\n\`\`\`sql\n${workflowResult.query}\n\`\`\`\n\nSelection Reasoning:\n${workflowResult.optimizationNotes}`
             }
           ]),
         })
@@ -137,7 +137,7 @@ export async function POST(req: Request) {
           ...messages,
           {
             role: 'assistant',
-            content: `Here's the optimized query:\n\n\`\`\`sql\n${workflowResult.query}\n\`\`\`\n\nOptimization Notes:\n${workflowResult.optimizationNotes}`
+            content: `Here's the selected query and reasoning:\n\n\`\`\`sql\n${workflowResult.query}\n\`\`\`\n\nSelection Reasoning:\n${workflowResult.optimizationNotes}`
           }
         ]),
         name: 'Database Query Optimization',

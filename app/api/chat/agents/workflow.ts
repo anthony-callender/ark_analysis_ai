@@ -162,46 +162,92 @@ async function executeQueryConstructor(
       messages: convertToCoreMessages([{ role: 'user', content: userQuery }]),
       system: `You are a PostgreSQL database optimization expert specializing in both query performance tuning and SQL query construction. Your primary objective is to always provide a direct, complete, and executable SQL query as your response whenever possible, rather than vague or generic explanations.
 
-      **MANDATORY Query Workflow:**
-      1. First, construct your SQL query
-      2. BEFORE executing ANY query, you MUST:
-         - Use validateQuery tool to check the query
-         - If validation fails:
-           - Read the error messages CAREFULLY
-           - Fix ONLY the specific issues mentioned in the errors
-           - Do NOT make other changes
-           - Validate again
-         - If validation succeeds:
-           - Proceed with query execution
-      3. NEVER:
-         - Skip validation
-         - Make changes not related to validation errors
-         - Apologize for validation failures
-         - Start over with a completely new query
-         - Explain the validation process to the user
+**MANDATORY Query Workflow:**
+1. First, construct your SQL query
+2. BEFORE executing ANY query, you MUST:
+   - Use validateQuery tool to check the query
+   - If validation fails:
+     - Read the error messages CAREFULLY
+     - Fix ONLY the specific issues mentioned in the errors
+     - Do NOT make other changes
+     - Validate again
+   - If validation succeeds:
+     - Proceed with query execution
+3. NEVER:
+   - Skip validation
+   - Make changes not related to validation errors
+   - Apologize for validation failures
+   - Start over with a completely new query
+   - Explain the validation process to the user
 
+**Academic Year Filtering:**
+- When filtering for "last year" or "previous year":
+  - DO NOT use current_year = FALSE (this includes ALL previous years)
+  - DO NOT hardcode year IDs like '2022-2023'
+  - Instead, use academic_year_id = current_year_id - 1
+  - Example: If current_year_id = 5, then last year is id = 4
+  - ALWAYS use relative IDs (current_year_id - 1) for "last year" queries
+  - NEVER assume specific year IDs without checking current_year_id first
 
-      **Core Rules:**
-      1. ALWAYS try to answer queries using primary tables first
-      2. Only look for alternative tables if primary tables cannot provide the required information
-      3. When using alternative tables, explain why primary tables were insufficient
-      4. Maintain proper join paths and access restrictions
-      5. ALWAYS filter by user role when querying testing_section_students or user_answers tables
-      6. Never assume a table contains data for only one user type without explicit filtering
-      7. ALWAYS use IDs (not names) for GROUP BY, JOIN conditions, aggregations, calculations, filtering, and DISTINCT operations
-      8. Names should ONLY be used for display purposes
-      9. ALWAYS handle NULL values appropriately using COALESCE, NULLIF, or IS NULL/IS NOT NULL
-      10. For score calculations, always use the formula: (knowledge_score / NULLIF(knowledge_total, 0)) * 100
+**NULL Handling Requirements:**
+- ALWAYS filter out NULL values and invalid scores:
+  - WHERE knowledge_score IS NOT NULL
+  - WHERE knowledge_total IS NOT NULL
+  - WHERE knowledge_total > 0
+  - WHERE knowledge_score > 0
+- ALWAYS cast to float for score calculations:
+  - knowledge_score::float
+  - knowledge_total::float
+- NEVER return NULL scores in results
+- Filter out invalid data BEFORE calculations
 
+**Direct Query Response Requirement:**
+- In at least 99% of interactions, if the user's request is related to retrieving data or constructing a query (e.g. "How many users do I have?"), your response must include a SQL query enclosed in a code block. For example, for "How many users do I have?" a correct response would be:
+  
+  \`\`\`sql
+  SELECT COUNT(*) AS total_users
+  FROM users;
+  \`\`\`
 
+**Query Validation:**
+Your query will be automatically validated against these rules:
+1. NULL handling must be present where needed
+2. IDs must be used instead of names for operations
+3. Role-based filtering must be present
+4. Diocese and testing center filters must be present
+5. All columns must exist in the schema
+6. Proper join paths must be maintained
 
-      **Direct Query Response Requirement:**
-      - In at least 99% of interactions, if the user's request is related to retrieving data or constructing a query (e.g. "How many users do I have?"), your response must include a SQL query enclosed in a code block. For example, for "How many users do I have?" a correct response would be:
-        
-         \`\`\`sql
-        SELECT COUNT(*) AS total_users
-        FROM users;
-         \`\`\`
+If any validation fails, you will receive specific error messages and must correct the query.
+
+**Core Rules:**
+1. ALWAYS try to answer queries using primary tables first
+2. Only look for alternative tables if primary tables cannot provide the required information
+3. When using alternative tables, explain why primary tables were insufficient
+4. Maintain proper join paths and access restrictions
+5. ALWAYS filter by user role when querying testing_section_students or user_answers tables
+6. Never assume a table contains data for only one user type without explicit filtering
+7. ALWAYS use IDs (not names) for GROUP BY, JOIN conditions, aggregations, calculations, filtering, and DISTINCT operations
+8. Names should ONLY be used for display purposes
+9. ALWAYS handle NULL values appropriately using COALESCE, NULLIF, or IS NULL/IS NOT NULL
+10. For score calculations, always use the formula: (knowledge_score / NULLIF(knowledge_total, 0)) * 100
+
+**Schema Verification:**
+Before constructing any query:
+1. Use getPublicTablesWithColumns to verify all tables and columns exist
+2. Never guess table or column names - always verify first
+3. If schema information is insufficient, ask for clarification
+4. Role IDs must be used correctly:
+   - Teachers: role = 5
+   - Students: role = 7
+
+**Query Validation Process:**
+1. Schema Verification: Check all tables and columns exist
+2. NULL Handling: Ensure proper NULL handling for calculations
+3. ID Usage: Verify IDs are used instead of names
+4. Role Filtering: Check for proper role filters (5 for teachers, 7 for students)
+5. Access Control: Verify diocese and testing center filters
+6. Join Paths: Ensure proper table relationships
 
 Available Tables and Columns:
 ${JSON.stringify(tablesWithColumns, null, 2)}
@@ -216,24 +262,7 @@ Table Statistics:
 ${JSON.stringify(tableStats, null, 2)}
 
 Index Usage Statistics:
-${JSON.stringify(indexStats, null, 2)}
-
-Query Construction Rules:
-1. Only use tables and columns that exist in the provided schema
-2. If a required table or column doesn't exist, suggest alternatives from the available schema
-3. Always include proper JOIN conditions using existing foreign keys
-4. Use proper NULL handling with COALESCE and NULLIF
-5. Include appropriate WHERE clauses for filtering
-6. Use proper GROUP BY and ORDER BY clauses
-7. Include LIMIT when appropriate
-8. Use proper aliases for tables and columns
-9. Format the query for readability
-10. Include comments explaining complex parts of the query
-11. Consider table and index statistics when constructing the query
-12. Use appropriate indexes based on the query patterns
-13. Optimize join order based on table statistics
-14. Consider using materialized views or CTEs for complex queries
-15. Use appropriate data types for comparisons and operations`
+${JSON.stringify(indexStats, null, 2)}`
     })
 
     let text = ''
@@ -619,24 +648,27 @@ ${agentResponses[4].constructedQuery}
     ]),
     system: `Query Generation Process:
 1. Analyze all source queries from each agent
-2. Combine the best features from each query:
-   - NULL handling improvements from Null Handler
-   - Table usage optimizations from Primary Tables
-   - Score calculation improvements from Score Calculation
-   - Query structure improvements from Query Rules
-   - Schema validation improvements from Schema Verification
-3. Create a final query that incorporates all optimizations
-4. Ensure the final query is valid and executable
-5. Document which features came from which agent
-6. INCLUDE ALL FEATURES FROM ALL AGENTS IN THE FINAL QUERY  
+2. Evaluate each query based on:
+   - NULL handling effectiveness
+   - Primary table usage
+   - Score calculation accuracy
+   - Query rule compliance
+   - Schema validation
+3. Select the best query that:
+   - Has the most complete NULL handling
+   - Uses primary tables correctly
+   - Calculates scores accurately
+   - Follows all query rules
+   - Is schema-valid
+4. Provide detailed reasoning for your selection
+5. If no single query meets all criteria, explain why and suggest improvements
 
 Key Responsibilities/Focus:
-- Analyze each source query for its unique optimizations
-- Combine the best features from all queries into a single optimized query
-- Ensure all optimizations work together harmoniously
-- Document the source of each optimization
-- Verify the final query against all rules and constraints
-- INCLUDE ALL FEATURES FROM ALL AGENTS IN THE FINAL QUERY`
+- Analyze each query's strengths and weaknesses
+- Select the best query based on comprehensive evaluation
+- Provide clear reasoning for the selection
+- Suggest improvements if needed
+- Ensure the selected query is valid and executable`
   })
 
   let text = ''
@@ -647,15 +679,15 @@ Key Responsibilities/Focus:
 
   console.log('Query Generation generated text:', text)
 
-  // Extract the final SQL query from the response
-  const finalQuery = text.match(/```sql\n([\s\S]*?)\n```/)?.[1] || query
+  // Extract the selected query from the response
+  const selectedQuery = text.match(/```sql\n([\s\S]*?)\n```/)?.[1] || query
   
   return {
     query,
     feedback: text,
     isValid: true,
-    constructedQuery: finalQuery,
-    finalQuery,
+    constructedQuery: selectedQuery,
+    finalQuery: selectedQuery,
     optimizationNotes: text,
     sourceQueries: {
       nullHandler: agentResponses[0].constructedQuery,
