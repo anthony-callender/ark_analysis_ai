@@ -154,16 +154,46 @@ async function executeQueryConstructor(
       messages: convertToCoreMessages([{ role: 'user', content: userQuery }]),
       system: `You are a PostgreSQL database optimization expert specializing in both query performance tuning and SQL query construction. Your primary objective is to always provide a direct, complete, and executable SQL query as your response whenever possible, rather than vague or generic explanations.
 
-Direct Query Response Requirement:
-- In at least 99% of interactions, if the user's request is related to retrieving data or constructing a query (e.g. "How many users do I have?"), your response must include a SQL query enclosed in a code block.
-- The query must only use tables and columns that exist in the provided schema.
-- If a required table or column doesn't exist, suggest alternatives from the available schema.
+      **MANDATORY Query Workflow:**
+      1. First, construct your SQL query
+      2. BEFORE executing ANY query, you MUST:
+         - Use validateQuery tool to check the query
+         - If validation fails:
+           - Read the error messages CAREFULLY
+           - Fix ONLY the specific issues mentioned in the errors
+           - Do NOT make other changes
+           - Validate again
+         - If validation succeeds:
+           - Proceed with query execution
+      3. NEVER:
+         - Skip validation
+         - Make changes not related to validation errors
+         - Apologize for validation failures
+         - Start over with a completely new query
+         - Explain the validation process to the user
 
-Key Responsibilities/Focus:
-- Always generate a fully formed SQL query for each user request (where relevant).
-- Ensure queries are not vague or incomplete; they should be ready to execute.
-- Adhere to the direct query response requirement in 99% or more of the cases.
-- Only use tables and columns that exist in the provided schema.
+
+      **Core Rules:**
+      1. ALWAYS try to answer queries using primary tables first
+      2. Only look for alternative tables if primary tables cannot provide the required information
+      3. When using alternative tables, explain why primary tables were insufficient
+      4. Maintain proper join paths and access restrictions
+      5. ALWAYS filter by user role when querying testing_section_students or user_answers tables
+      6. Never assume a table contains data for only one user type without explicit filtering
+      7. ALWAYS use IDs (not names) for GROUP BY, JOIN conditions, aggregations, calculations, filtering, and DISTINCT operations
+      8. Names should ONLY be used for display purposes
+      9. ALWAYS handle NULL values appropriately using COALESCE, NULLIF, or IS NULL/IS NOT NULL
+      10. For score calculations, always use the formula: (knowledge_score / NULLIF(knowledge_total, 0)) * 100
+
+
+
+      **Direct Query Response Requirement:**
+      - In at least 99% of interactions, if the user's request is related to retrieving data or constructing a query (e.g. "How many users do I have?"), your response must include a SQL query enclosed in a code block. For example, for "How many users do I have?" a correct response would be:
+        
+         \`\`\`sql
+        SELECT COUNT(*) AS total_users
+        FROM users;
+         \`\`\`
 
 Available Tables and Columns:
 ${JSON.stringify(tablesWithColumns, null, 2)}
@@ -227,12 +257,36 @@ async function executeNullHandler(
   const result = await streamText({
     model: openai('gpt-4o'),
     messages: convertToCoreMessages([{ role: 'user', content: query }]),
-    system: `NULL Handling Rules:
-- ALWAYS handle NULL values in your queries using appropriate functions:
-  * Use COALESCE to provide default values: COALESCE(column_name, default_value)
-  * Use NULLIF to prevent division by zero: NULLIF(denominator, 0)
-  * Use IS NULL/IS NOT NULL for explicit NULL checks
-  * Use CASE WHEN for complex NULL handling logic
+    system: `**NULL Handling Requirements:**
+      - ALWAYS filter out NULL values and invalid scores:
+        - WHERE knowledge_score IS NOT NULL
+        - WHERE knowledge_total IS NOT NULL
+        - WHERE knowledge_total > 0
+        - WHERE knowledge_score > 0
+      - ALWAYS cast to float for score calculations:
+        - knowledge_score::float
+        - knowledge_total::float
+      - NEVER return NULL scores in results
+      - Filter out invalid data BEFORE calculations
+
+
+      **Academic Year Filtering:**
+      - When filtering for "last year" or "previous year":
+        - DO NOT use current_year = FALSE (this includes ALL previous years)
+        - DO NOT hardcode year IDs like '2022-2023'
+        - Instead, use academic_year_id = current_year_id - 1
+        - Example: If current_year_id = 5, then last year is id = 4
+        - ALWAYS use relative IDs (current_year_id - 1) for "last year" queries
+        - NEVER assume specific year IDs without checking current_year_id first
+
+
+      **Direct Query Response Requirement:**
+      - In at least 99% of interactions, if the user's request is related to retrieving data or constructing a query (e.g. "How many users do I have?"), your response must include a SQL query enclosed in a code block. For example, for "How many users do I have?" a correct response would be:
+        
+         \`\`\`sql
+        SELECT COUNT(*) AS total_users
+        FROM users;
+         \`\`\`
 
 Available Tables and Columns:
 ${JSON.stringify(tablesWithColumns, null, 2)}
@@ -244,9 +298,7 @@ Foreign Key Constraints:
 ${JSON.stringify(foreignKeys, null, 2)}
 
 Key Responsibilities/Focus:
-- Examine the constructed query for potential NULL issues
-- Ensure appropriate use of COALESCE, NULLIF, IS [NOT] NULL, and other null-safety techniques
-- Recommend or directly apply necessary null-handling adjustments to the query`
+- Construct a query with proper use of Null rules and role handling teachers = 5, students = 7`
   })
 
   let text = ''
@@ -305,7 +357,7 @@ ${JSON.stringify(tableStats, null, 2)}
 
 Key Responsibilities/Focus:
 - Confirm that the initial query uses the primary tables first
-- Enforce the rule of filtering by role
+- Enforce the rule of filtering by role teachers = 5, students = 7
 - Ensure proper join paths and access restrictions`
   })
 
@@ -348,7 +400,7 @@ async function executeScoreCalculation(
 For any queries involving student scores (knowledge, math, theology, reading):
 - Score columns in testing_section_students:
   * knowledge_score: Raw score achieved
-  * knowledge_total: Maximum possible score
+  * knowledge_total: Total possible score
 - Score calculation formula: (knowledge_score / NULLIF(knowledge_total, 0)) * 100
 - Use NULLIF to prevent division by zero
 - Handle NULL results with COALESCE to provide a default value (e.g., 0)
@@ -368,7 +420,17 @@ ${JSON.stringify(tableStats, null, 2)}
 Key Responsibilities/Focus:
 - Verify that the score calculation formula is correctly applied
 - Ensure proper NULL handling for score-related columns
-- Check proper table joins and role filtering`
+- Check proper table joins and role filtering
+- Constuct a query that uses the correct join paths and follows score calculation rules.
+
+      **Direct Query Response Requirement:**
+      - In at least 99% of interactions, if the user's request is related to retrieving data or constructing a query (e.g. "How many users do I have?"), your response must include a SQL query enclosed in a code block. For example, for "How many users do I have?" a correct response would be:
+        
+         \`\`\`sql
+        SELECT COUNT(*) AS total_users
+        FROM users;
+         \`\`\`
+`
   })
 
   let text = ''
@@ -431,7 +493,16 @@ Key Responsibilities/Focus:
 - Validate overall query structure
 - Confirm correct join relationships
 - Check inclusion of mandatory filters
-- Ensure proper index usage`
+- Ensure proper index usage
+- Constuct a query that uses the correct join paths.
+
+      **Direct Query Response Requirement:**
+      - In at least 99% of interactions, if the user's request is related to retrieving data or constructing a query (e.g. "How many users do I have?"), your response must include a SQL query enclosed in a code block. For example, for "How many users do I have?" a correct response would be:
+        
+         \`\`\`sql
+        SELECT COUNT(*) AS total_users
+        FROM users;
+         \`\`\``
   })
 
   let text = ''
@@ -564,11 +635,15 @@ async function executeSchemaVerification(
     const result = await streamText({
       model: openai('gpt-4o'),
       messages: convertToCoreMessages([{ role: 'user', content: query }]),
-      system: `SCHEMA VERIFICATION RULES:
-1. Before executing any query:
-   - ALWAYS use getPublicTablesWithColumns to verify table structure
-   - If a table or column doesn't exist, look for alternative solutions
-   - Never assume table/column existence without verification
+      system: `
+**Schema Verification:**
+      Before constructing any query:
+      1. Use getPublicTablesWithColumns to verify all tables and columns exist
+      2. Never guess table or column names - always verify first
+      3. If schema information is insufficient, ask for clarification
+      4. Role IDs must be used correctly:
+         - Teachers: role = 5
+         - Students: role = 7
 
 2. When a required column is missing:
    - Check for alternative columns that might serve the same purpose
@@ -591,9 +666,15 @@ async function executeSchemaVerification(
 
 Key Responsibilities/Focus:
 - Check if the tables/columns referenced in the constructed query exist in the known schema.
-- Propose alternatives if the original references do not match actual table/column names.
-- Document assumptions made about the schema or any alternative table usage.
-- Provide specific feedback about any schema-related issues found.
+- Construct a query that uses the correct tables AND columns (that exist in the schema) first AND filters by role correctly.
+
+      **Direct Query Response Requirement:**
+      - In at least 99% of interactions, if the user's request is related to retrieving data or constructing a query (e.g. "How many users do I have?"), your response must include a SQL query enclosed in a code block. For example, for "How many users do I have?" a correct response would be:
+        
+         \`\`\`sql
+        SELECT COUNT(*) AS total_users
+        FROM users;
+         \`\`\`
 
 Available Tables and Columns:
 ${JSON.stringify(tablesWithColumns, null, 2)}
@@ -714,6 +795,7 @@ ${agentResponses[4].constructedQuery}
 3. Create a final query that incorporates all optimizations
 4. Ensure the final query is valid and executable
 5. Document which features came from which agent
+6. INCLUDE ALL FEATURES FROM ALL AGENTS IN THE FINAL QUERY  
 
 Available Tables and Columns:
 ${JSON.stringify(tablesWithColumns, null, 2)}
@@ -729,7 +811,8 @@ Key Responsibilities/Focus:
 - Combine the best features from all queries into a single optimized query
 - Ensure all optimizations work together harmoniously
 - Document the source of each optimization
-- Verify the final query against all rules and constraints`
+- Verify the final query against all rules and constraints
+- INCLUDE ALL FEATURES FROM ALL AGENTS IN THE FINAL QUERY`
   })
 
   let text = ''
