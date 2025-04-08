@@ -30,6 +30,5 @@ export async function getChats() {
   }
 
   console.log('Successfully fetched chats:', data?.length || 0, 'results')
-  console.log('Chats data:', data)
   return { data }
 }
