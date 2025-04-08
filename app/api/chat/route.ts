@@ -137,9 +137,14 @@ export async function POST(req: Request) {
          IMPORTANT: testing_section_students contains data for ALL users, not just students
          Always join with users table and filter by role when you need specific user types
       
-      2. Academic Years:
-         - Use the academic_years table for time-based analysis
-         - This is the primary table for academic year context
+      2. Academic Year Filtering:
+      - When filtering for "last year" or "previous year":
+        - DO NOT use current_year = FALSE (this includes ALL previous years)
+        - DO NOT hardcode year IDs like '2022-2023'
+        - Instead, use academic_year_id = current_year_id - 1
+        - Example: If current_year_id = 5, then last year is id = 4
+        - ALWAYS use relative IDs (current_year_id - 1) for "last year" queries
+        - NEVER assume specific year IDs without checking current_year_id first
       
       3. User Answers and Questions:
          - user_answers table: Contains user responses
@@ -185,7 +190,7 @@ export async function POST(req: Request) {
 
       **QUERY RULES:**
       1. **Table Relationships:**
-         - ALWAYS join back to testing_center table to get diocese_id
+         - ALWAYS join back to testing_center table 
          - Use this join path: table → testing_section_students → testing_sections → testing_center
          - For subject-specific queries: JOIN subject_areas ON testing_section_students.subject_area_id = subject_areas.id
          - Optional: JOIN dioceses ON testing_centers.diocese_id = dioceses.id (for diocese details)
@@ -232,29 +237,18 @@ export async function POST(req: Request) {
            * Use name only for display
            * Always join to get the name after calculations are done
 
-      3. **NULL Handling Rules:**
-         - ALWAYS handle NULL values in your queries using appropriate functions:
-           * Use COALESCE to provide default values: COALESCE(column_name, default_value)
-           * Use NULLIF to prevent division by zero: NULLIF(denominator, 0)
-           * Use IS NULL/IS NOT NULL for explicit NULL checks
-           * Use CASE WHEN for complex NULL handling logic
-         - Common NULL handling patterns:
-           * For numeric calculations: COALESCE(column_name, 0)
-           * For text fields: COALESCE(column_name, '')
-           * For dates: COALESCE(column_name, CURRENT_DATE)
-           * For boolean fields: COALESCE(column_name, false)
-         - When joining tables:
-           * Use LEFT JOIN when NULL values are expected
-           * Use COALESCE on joined columns that might be NULL
-           * Consider using CASE WHEN to handle NULL join results
-         - When aggregating:
-           * Use COALESCE with aggregate functions: COALESCE(SUM(column_name), 0)
-           * Handle NULL in GROUP BY columns
-           * Consider NULL in HAVING clauses
-         - When comparing:
-           * Use IS NULL/IS NOT NULL instead of = NULL
-           * Consider NULL in BETWEEN and IN clauses
-           * Handle NULL in ORDER BY clauses
+      3. **NULL Handling Requirements:**
+      - ALWAYS filter out NULL values and invalid scores:
+        - WHERE knowledge_score IS NOT NULL
+        - WHERE knowledge_total IS NOT NULL
+        - WHERE knowledge_total > 0
+        - WHERE knowledge_score > 0
+      - ALWAYS cast to float for score calculations:
+        - knowledge_score::float
+        - knowledge_total::float
+      - NEVER return NULL scores in results
+      - Filter out invalid data BEFORE calculations
+
 
       4. **Query Validation:**
          - Before executing any query, verify it includes the required filters:
@@ -271,17 +265,21 @@ export async function POST(req: Request) {
 
       **SCHEMA VERIFICATION RULES:**
       1. Before executing any query:
-         - ALWAYS use getPublicTablesWithColumns to verify table structure
+         - ALWAYS Use getPublicTablesWithColumns to verify all tables and columns exist
          - If a table or column doesn't exist, look for alternative solutions
-         - Never assume table/column existence without verification
+         - Never guess table or column names - always verify first
+
+      2. Role IDs must be used correctly:
+         - Teachers: role = 5
+         - Students: role = 7
       
-      2. When a required column is missing:
+      3. When a required column is missing:
          - Check for alternative columns that might serve the same purpose
          - Look for related tables that might contain the needed information
          - Suggest alternative approaches to achieve the same goal
          - If no alternative exists, explain why the query cannot be executed
       
-      3. Schema Navigation Process:
+      4. Schema Navigation Process:
          - Start by verifying all tables in the query exist
          - Then verify all columns being selected, joined, or filtered
          - If any verification fails, revise the query or suggest alternatives
@@ -400,8 +398,13 @@ export async function POST(req: Request) {
                  - Verify proper role filtering is applied
                  - Check if testing_section_students is properly joined with users table
               
-              2. Academic Years:
-                 - Verify proper use of academic_years table for time-based analysis
+              2. Academic Year Filtering:
+                 - For "last year" or "previous year" queries:
+                   * Verify NOT using current_year = FALSE
+                   * Verify NOT using hardcoded year IDs
+                   * Check for proper use of academic_year_id = current_year_id - 1
+                   * Ensure relative IDs are used (current_year_id - 1)
+                   * Verify no assumptions about specific year IDs
               
               3. User Answers and Questions:
                  - Check proper joins between user_answers, questions, and users tables
@@ -425,11 +428,17 @@ export async function POST(req: Request) {
                  - Check that names are only used for display purposes
                  - Verify proper ID and name selection in results
 
-              3. NULL Handling Rules:
-                 - Check for proper COALESCE usage
-                 - Verify NULLIF for division operations
-                 - Check for proper IS NULL/IS NOT NULL usage
-                 - Verify CASE WHEN for complex NULL handling
+              3. NULL Handling Requirements:
+                 - Verify proper filtering of NULL values and invalid scores:
+                   * WHERE knowledge_score IS NOT NULL
+                   * WHERE knowledge_total IS NOT NULL
+                   * WHERE knowledge_total > 0
+                   * WHERE knowledge_score > 0
+                 - Check proper type casting for score calculations:
+                   * knowledge_score::float
+                   * knowledge_total::float
+                 - Verify no NULL scores in results
+                 - Check that invalid data is filtered BEFORE calculations
 
               4. Query Validation:
                  - Verify required filters are present:
@@ -441,6 +450,25 @@ export async function POST(req: Request) {
                  - Check proper table joins
                  - Verify score calculation type casting
                  - Check NULL handling for all relevant columns
+
+              **SCHEMA VERIFICATION RULES:**
+              1. Table and Column Verification:
+                 - Verify use of getPublicTablesWithColumns to check all tables and columns
+                 - Check for proper handling of missing tables/columns
+                 - Verify no guessing of table or column names
+
+              2. Role ID Verification:
+                 - Verify correct use of role IDs:
+                   * Teachers: role = 5
+                   * Students: role = 7
+
+              3. Missing Column Handling:
+                 - Check for alternative columns or tables
+                 - Verify proper explanation if no alternatives exist
+
+              4. Schema Navigation:
+                 - Verify all tables in query exist
+                 - Check all columns being selected, joined, or filtered
 
               If the query meets all criteria, respond with "ACCEPTED: [brief explanation]".
               If improvements are needed, respond with "REJECTED: [detailed feedback]" and specify which criteria were not met.

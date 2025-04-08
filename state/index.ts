@@ -27,9 +27,6 @@ export const useAppState = create<AppState>((set, get) => ({
   setChats: (chats) => set({ chats }),
   setChat: (chat) => set({ chat }),
   updateChats: async () => {
-    // await 3 seconds
-    await new Promise((resolve) => setTimeout(resolve, 3000))
-
     const { data, error } = await getChats()
     if (error) {
       return
