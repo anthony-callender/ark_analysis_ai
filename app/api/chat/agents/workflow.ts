@@ -183,6 +183,7 @@ async function executeQueryConstructor(
 **Academic Year Filtering:**
 - When filtering for "last year" or "previous year":
   - DO NOT use current_year = FALSE (this includes ALL previous years)
+  - DO NOT use current_year = TRUE (this includes ALL current years)
   - DO NOT hardcode year IDs like '2022-2023'
   - Instead, use academic_year_id = current_year_id - 1
   - Example: If current_year_id = 5, then last year is id = 4
@@ -326,6 +327,7 @@ async function executeNullHandler(
       **Academic Year Filtering:**
       - When filtering for "last year" or "previous year":
         - DO NOT use current_year = FALSE (this includes ALL previous years)
+        - DO NOT use current_year = TRUE (this includes ALL current years)
         - DO NOT hardcode year IDs like '2022-2023'
         - Instead, use academic_year_id = current_year_id - 1
         - Example: If current_year_id = 5, then last year is id = 4
@@ -597,6 +599,26 @@ async function executeQueryGeneration(
   console.log('Starting Query Generation with query:', query)
   const openai = createOpenAI({ apiKey: openaiApiKey })
   
+  // Get schema information
+  console.log('Fetching schema information for query generation...')
+  const tablesWithColumns = await getPublicTablesWithColumns(connectionString)
+  const indexes = await getIndexes(connectionString)
+  const foreignKeys = await getForeignKeyConstraints(connectionString)
+  const tableStats = await getTableStats(connectionString)
+  const indexStats = await getIndexStatsUsage(connectionString)
+  
+  // Type guard for tablesWithColumns
+  if (typeof tablesWithColumns === 'string') {
+    throw new Error('Failed to fetch tables with columns: ' + tablesWithColumns)
+  }
+
+  console.log('Schema information retrieved for query generation:')
+  console.log('- Tables with columns:', JSON.stringify(tablesWithColumns, null, 2))
+  console.log('- Indexes:', JSON.stringify(indexes, null, 2))
+  console.log('- Foreign keys:', JSON.stringify(foreignKeys, null, 2))
+  console.log('- Table stats:', JSON.stringify(tableStats, null, 2))
+  console.log('- Index stats:', JSON.stringify(indexStats, null, 2))
+  
   // Combine feedback and queries from all agents
   const feedbackSummary = `NULL Handling Feedback:
 ${agentResponses[0].feedback}
@@ -638,7 +660,21 @@ ${agentResponses[3].constructedQuery}
 \`\`\`sql
 ${agentResponses[4].constructedQuery}
 \`\`\`
-`
+
+Available Tables and Columns:
+${JSON.stringify(tablesWithColumns, null, 2)}
+
+Indexes:
+${JSON.stringify(indexes, null, 2)}
+
+Foreign Key Constraints:
+${JSON.stringify(foreignKeys, null, 2)}
+
+Table Statistics:
+${JSON.stringify(tableStats, null, 2)}
+
+Index Usage Statistics:
+${JSON.stringify(indexStats, null, 2)}`
   
   const result = await streamText({
     model: openai('gpt-4o'),
@@ -648,27 +684,67 @@ ${agentResponses[4].constructedQuery}
     ]),
     system: `Query Generation Process:
 1. Analyze all source queries from each agent
-2. Evaluate each query based on:
-   - NULL handling effectiveness
-   - Primary table usage
-   - Score calculation accuracy
-   - Query rule compliance
-   - Schema validation
-3. Select the best query that:
-   - Has the most complete NULL handling
-   - Uses primary tables correctly
-   - Calculates scores accurately
-   - Follows all query rules
-   - Is schema-valid
-4. Provide detailed reasoning for your selection
-5. If no single query meets all criteria, explain why and suggest improvements
+2. Evaluate each query based on the following criteria:
 
-Key Responsibilities/Focus:
-- Analyze each query's strengths and weaknesses
-- Select the best query based on comprehensive evaluation
-- Provide clear reasoning for the selection
-- Suggest improvements if needed
-- Ensure the selected query is valid and executable`
+**Academic Year Filtering:**
+- When filtering for "last year" or "previous year":
+  - DO NOT use current_year = FALSE (this includes ALL previous years)
+  - DO NOT use current_year = TRUE (this includes ALL current years)
+  - DO NOT hardcode year IDs like '2022-2023'
+  - Instead, use academic_year_id = current_year_id - 1
+  - Example: If current_year_id = 5, then last year is id = 4
+  - ALWAYS use relative IDs (current_year_id - 1) for "last year" queries
+  - NEVER assume specific year IDs without checking current_year_id first
+
+**NULL Handling Requirements:**
+- ALWAYS filter out NULL values and invalid scores:
+  - WHERE knowledge_score IS NOT NULL
+  - WHERE knowledge_total IS NOT NULL
+  - WHERE knowledge_total > 0
+  - WHERE knowledge_score > 0
+- ALWAYS cast to float for score calculations:
+  - knowledge_score::float
+  - knowledge_total::float
+- NEVER return NULL scores in results
+- Filter out invalid data BEFORE calculations
+
+**Query Validation:**
+Your query will be automatically validated against these rules:
+- NULL handling must be present where needed
+- IDs must be used instead of names for operations but can be used for display purposes
+- All columns must exist in the schema
+- Proper join paths must be maintained
+
+**Core Rules:**
+- ALWAYS answers queries using primary tables first
+- ALWAYS filter by user role when querying testing_section_students or user_answers tables
+- ALWAYS use IDs (not names) for GROUP BY, JOIN conditions, aggregations, calculations, filtering, and DISTINCT operations
+- Names should ONLY be used for display purposes
+- For score calculations, always use the formula: (knowledge_score / NULLIF(knowledge_total, 0)) * 100
+
+Role IDs must be used correctly:
+   - Teachers: role = 5
+   - Students: role = 7
+
+**Query Validation Process:**
+- Schema Verification: Check all tables and columns exist
+- NULL Handling: Ensure proper NULL handling for calculations
+- ID Usage: Verify IDs are used instead of names in the groupby
+- Role Filtering: Check for proper role filters (5 for teachers, 7 for students)
+- Join Paths: Ensure proper table relationships
+
+3. Provide detailed reasoning for your selection
+4. Please make a final columns and tables existance check.
+5. If no single query meets all criteria, explain why and suggest improvements and provide a final query that meets all criteria.
+
+**Direct Query Response Requirement:**
+- Your response must include the final you selected as a SQL query enclosed in a code block. For example, for "How many users do I have?" a correct response would be:
+  
+  \`\`\`sql
+  SELECT COUNT(*) AS total_users
+  FROM users;
+  \`\`\`
+`
   })
 
   let text = ''
@@ -682,13 +758,23 @@ Key Responsibilities/Focus:
   // Extract the selected query from the response
   const selectedQuery = text.match(/```sql\n([\s\S]*?)\n```/)?.[1] || query
   
+  // Validate the final query against the schema
+  const schemaValidation = await executeSchemaVerification(selectedQuery, connectionString, openaiApiKey)
+  if (!schemaValidation.isValid) {
+    console.error('Final query failed schema validation:', schemaValidation.feedback)
+    throw new Error(`Final query failed schema validation: ${schemaValidation.feedback}`)
+  }
+
+  // Get query explanation
+  const explainResult = await getExplainForQuery(selectedQuery, connectionString)
+  
   return {
     query,
     feedback: text,
     isValid: true,
     constructedQuery: selectedQuery,
     finalQuery: selectedQuery,
-    optimizationNotes: text,
+    optimizationNotes: `Query Explanation:\n${JSON.stringify(explainResult, null, 2)}\n\n${text}`,
     sourceQueries: {
       nullHandler: agentResponses[0].constructedQuery,
       primaryTables: agentResponses[1].constructedQuery,
