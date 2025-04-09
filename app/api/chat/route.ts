@@ -36,10 +36,40 @@ const SCHEMA_RULES = [
   "Use IDs (not names) for GROUP BY clauses, JOIN conditions, and filtering"
 ];
 
+// Create a singleton vector store
+let vectorStoreInstance: SchemaVectorStore | null = null;
+let schemaStored = false;
+
+// Helper function to get or create vector store instance
+async function getVectorStore(apiKey: string): Promise<SchemaVectorStore> {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.error('Missing Supabase configuration');
+    throw new Error('Server configuration error');
+  }
+  
+  if (!vectorStoreInstance) {
+    console.log('Creating new vector store instance');
+    vectorStoreInstance = new SchemaVectorStore(
+      supabaseUrl,
+      supabaseServiceKey,
+      apiKey
+    );
+    await vectorStoreInstance.initialize();
+  }
+  
+  return vectorStoreInstance;
+}
+
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30
 
 export async function POST(req: Request) {
+  const startTime = Date.now();
+  console.log('POST request started at:', new Date().toISOString());
+  
   const client = await createClient()
   const { data } = await client.auth.getUser()
   const user = data.user
@@ -105,29 +135,33 @@ export async function POST(req: Request) {
 
   const shouldUpdateChats = !chat
   
-  // Initialize vector store - would typically be done during app setup
-  // but for demonstration we'll do it here
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  console.log(`Setup time: ${Date.now() - startTime}ms`);
+  const vectorStoreStartTime = Date.now();
   
-  if (!supabaseUrl || !supabaseServiceKey) {
-    console.error('Missing Supabase configuration')
-    return new Response('Server configuration error', { status: 500 })
+  // Get or create vector store instance
+  let vectorStore: SchemaVectorStore;
+  try {
+    vectorStore = await getVectorStore(projectOpenaiApiKey);
+    console.log(`Vector store initialization: ${Date.now() - vectorStoreStartTime}ms`);
+  } catch (error) {
+    console.error('Error initializing vector store:', error);
+    return new Response('Error initializing vector store', { status: 500 });
   }
-  
-  const vectorStore = new SchemaVectorStore(
-    supabaseUrl,
-    supabaseServiceKey,
-    projectOpenaiApiKey
-  )
 
   const result = streamText({
     model: openai('gpt-4o'),
     messages: convertToCoreMessages(messages),
     system: `
-      You are a PostgreSQL Query Generator Agent. Your primary responsibility is to generate accurate and efficient SQL queries based on user requests.
-      
-      The assistant will retrieve relevant schema information based on your query, so you don't need all database details upfront.
+     You are a PostgreSQL Query Generator Agent. Your primary responsibility is to generate accurate and efficient SQL queries based on user requests.
+     
+     The assistant will retrieve relevant schema information based on your query, so you don't need all database details upfront.
+     
+     When generating queries:
+     1. Always verify the table and column existence using the getPublicTablesWithColumns tool
+     2. Include all required filters and joins
+     3. Use proper score calculations with NULLIF and type casting
+     4. Follow the schema rules provided in the relevant schema information
+     5. Present the final SQL query in a code block
     `,
     maxSteps: 22,
     tools: {
@@ -135,12 +169,17 @@ export async function POST(req: Request) {
         description:
           'Retrieves a list of tables and their columns from the connected PostgreSQL database.',
         execute: async () => {
+          const tablesTimerId = `getPublicTablesWithColumns-${Date.now()}`;
+          console.time(tablesTimerId);
           const tables = await getPublicTablesWithColumns(connectionString)
           
-          // Store tables in vector store if tables retrieved
-          if (tables && tables.length > 0) {
+          // Only store schema in vector store if not already stored
+          if (tables && tables.length > 0 && !schemaStored) {
             try {
-              await vectorStore.initialize()
+              console.log('Storing schema in vector store (first time only)');
+              const schemaTimerId = `storeSchema-${Date.now()}`;
+              console.time(schemaTimerId);
+              
               const constraints = await getForeignKeyConstraints(connectionString)
               // Fix type issue - cast tables to the correct type for storeSchemaInfo
               const typedTables = tables as unknown as Array<{
@@ -166,13 +205,20 @@ export async function POST(req: Request) {
                 foreignTableName: string;
                 foreignColumnName: string;
               }>;
+              
               const storedCount = await vectorStore.storeSchemaInfo(typedTables, typedConstraints, SCHEMA_RULES)
-              console.log(`Stored ${storedCount} schema vector entries`)
+              console.log(`Stored ${storedCount} schema vector entries`);
+              schemaStored = true;
+              
+              console.timeEnd(schemaTimerId);
             } catch (error) {
               console.error('Error storing schema in vector store:', error)
             }
+          } else {
+            console.log('Schema already stored, skipping vectorization');
           }
           
+          console.timeEnd(tablesTimerId);
           return tables
         },
         parameters: z.object({}),
@@ -182,7 +228,8 @@ export async function POST(req: Request) {
         description: 'Retrieves relevant schema information based on a natural language query.',
         execute: async ({ query }) => {
           try {
-            await vectorStore.initialize()
+            const infoTimerId = `getRelevantSchemaInfo-${Date.now()}`;
+            console.time(infoTimerId);
             const relevantInfo = await vectorStore.searchSchemaInfo(query, 15)
             
             // Format the results in a more readable way
@@ -195,6 +242,7 @@ export async function POST(req: Request) {
               column_name: info.column_name
             }));
             
+            console.timeEnd(infoTimerId);
             return formattedResults
           } catch (error) {
             console.error('Error retrieving schema info:', error)
@@ -254,217 +302,6 @@ export async function POST(req: Request) {
           return constraints
         },
         parameters: z.object({}),
-      }),
-
-      evaluateQuery: tool({
-        description: 'Evaluates a generated SQL query and provides feedback.',
-        execute: async ({ query }) => {
-          try {
-            console.log('\n=== Query Evaluation Step ===')
-            console.log('Query being evaluated:', query)
-
-            // First, verify table and column existence
-            console.log('Verifying table and column existence...')
-            const tables = await getPublicTablesWithColumns(connectionString) as Array<{
-              description?: {
-                requiresDioceseFilter: boolean;
-                joinPath: string;
-                hasDirectDioceseColumn: boolean;
-                example: string;
-              };
-              tableName: string;
-              schemaName: string;
-              columns: Array<{
-                name: string;
-                type: string;
-                isNullable: boolean;
-              }>;
-            }>;
-            
-            // Extract table names from the query
-            const tableMatches = query.match(/FROM\s+([a-zA-Z_]+)|JOIN\s+([a-zA-Z_]+)/gi) || []
-            const tablesInQuery = tableMatches.map(match => {
-              const parts = match.split(/\s+/)
-              return parts[parts.length - 1].toLowerCase()
-            })
-
-            // Extract column names from the query
-            const columnMatches = query.match(/\b([a-zA-Z_]+)\.([a-zA-Z_]+)\b/g) || []
-            const columnsInQuery = columnMatches.map(match => {
-              const [table, column] = match.split('.')
-              return { table: table.toLowerCase(), column: column.toLowerCase() }
-            })
-
-            // Verify tables exist
-            const missingTables = tablesInQuery.filter(table => 
-              !tables.some(t => t.tableName.toLowerCase() === table)
-            )
-
-            // Verify columns exist in their respective tables
-            const missingColumns = columnsInQuery.filter(({ table, column }) => {
-              const tableInfo = tables.find(t => t.tableName.toLowerCase() === table)
-              return !tableInfo?.columns.some(c => c.name.toLowerCase() === column)
-            })
-
-            if (missingTables.length > 0 || missingColumns.length > 0) {
-              let errorMessage = 'REJECTED: Schema validation failed.\n'
-              if (missingTables.length > 0) {
-                errorMessage += `Missing tables: ${missingTables.join(', ')}\n`
-              }
-              if (missingColumns.length > 0) {
-                errorMessage += `Missing columns: ${missingColumns.map(({ table, column }) => 
-                  `${table}.${column}`
-                ).join(', ')}`
-              }
-              return errorMessage
-            }
-
-            // Get relevant schema information from vector store for evaluating the query
-            const schemaInfo = await vectorStore.searchSchemaInfo(query, 10)
-            console.log('Retrieved relevant schema info for evaluation')
-            
-            // Extract rules from schema info
-            const relevantRules = schemaInfo
-              .filter(info => info.type === 'rule')
-              .map(info => info.content.replace('Rule: ', ''))
-            
-            // Check for common issues
-            const issues = [];
-
-            // Check role IDs 
-            if (query.includes("role = 'student'") || query.includes("role = 'teacher'")) {
-              issues.push("Role IDs must be numeric: use role = 7 for students and role = 5 for teachers");
-            }
-
-            // Check academic year
-            if (query.match(/year\s*=\s*['"]\d{4}-\d{4}['"]/i)) {
-              issues.push("Academic year must use relative IDs: use academic_year_id = current_year_id - 1 for last year");
-            }
-
-            // Check NULL handling
-            if (!query.includes("WHERE knowledge_score IS NOT NULL") || 
-                !query.includes("WHERE knowledge_total IS NOT NULL")) {
-              issues.push("Must explicitly filter out NULL values: WHERE knowledge_score IS NOT NULL AND knowledge_total IS NOT NULL");
-            }
-
-            // Check score calculation
-            if (!query.includes("NULLIF(knowledge_total, 0)")) {
-              issues.push("Score calculation must use NULLIF: (knowledge_score / NULLIF(knowledge_total, 0)) * 100");
-            }
-
-            if (issues.length > 0) {
-              return `REJECTED: Query validation failed.\n${issues.join('\n')}`;
-            }
-            
-            // Use more dynamic evaluation with retrieved schema info
-            const evaluatorPrompt = `
-              You are a PostgreSQL Query Evaluator Agent. Your role is to evaluate SQL queries against the following criteria:
-
-              ${relevantRules.length > 0 ? `
-              **RELEVANT RULES FROM SCHEMA:**
-              ${relevantRules.join('\n')}
-              ` : ''}
-
-              **Direct Query Response Requirement:**
-              - The response must include a SQL query enclosed in a code block
-              - The query must be complete and executable
-              - The query must directly answer the user's request
-
-              **SCHEMA VERIFICATION RULES:**
-              1. Table and Column Verification:
-                 - Verify all tables and columns exist
-                 - Check for proper handling of missing tables/columns
-                 - Verify no guessing of table or column names
-
-              2. Role ID Verification:
-                 - Verify correct use of role IDs:
-                   * Teachers: role = 5
-                   * Students: role = 7
-
-              3. Missing Column Handling:
-                 - Check for alternative columns or tables
-                 - Verify proper explanation if no alternatives exist
-
-              4. Schema Navigation:
-                 - Verify all tables in query exist
-                 - Check all columns being selected, joined, or filtered
-
-              If the query meets all criteria, respond with "ACCEPTED: [brief explanation]".
-              If improvements are needed, respond with "REJECTED: [detailed feedback]" and specify which criteria were not met.
-
-              Query to evaluate:
-              ${query}
-            `
-
-            console.log('Sending evaluation request to OpenAI...')
-            const evaluation = await generateText({
-              model: openai('gpt-4o'),
-              system: evaluatorPrompt,
-              prompt: 'Please evaluate this SQL query against all the specified criteria.',
-            })
-
-            console.log('Evaluation result:', evaluation.text)
-            return evaluation.text
-          } catch (error) {
-            console.error('Error in evaluateQuery:', error)
-            throw error
-          }
-        },
-        parameters: z.object({
-          query: z.string().describe('The SQL query to evaluate'),
-        }),
-      }),
-
-      generateQuery: tool({
-        description: 'Generates a new SQL query based on user request and feedback.',
-        execute: async ({ request, feedback }) => {
-          try {
-            console.log('\n=== Query Generation Step ===')
-            console.log('User request:', request)
-            if (feedback) {
-              console.log('Previous feedback:', feedback)
-            }
-            
-            // Get relevant schema information from vector store
-            const schemaInfo = await vectorStore.searchSchemaInfo(request, 15)
-            console.log('Retrieved relevant schema info for query generation')
-            
-            // Format the schema info for the prompt
-            const formattedSchemaInfo = schemaInfo.map(info => info.content).join('\n\n')
-            
-            const generatorPrompt = `
-              You are a PostgreSQL Query Generator Agent. 
-              
-              ${feedback ? `Your previous query was rejected with the following feedback:
-              ${feedback}
-              
-              Please generate a new query that addresses these concerns.` : 'Please generate a query for the following request:'}
-              
-              Here is relevant schema information retrieved based on your request:
-              
-              ${formattedSchemaInfo}
-              
-              Request: ${request}
-            `
-
-            console.log('Sending generation request to OpenAI...')
-            const newQuery = await generateText({
-              model: openai('gpt-4o'),
-              system: generatorPrompt,
-              prompt: 'Please generate a SQL query for this request.',
-            })
-
-            console.log('Generated query:', newQuery.text)
-            return newQuery.text
-          } catch (error) {
-            console.error('Error in generateQuery:', error)
-            throw error
-          }
-        },
-        parameters: z.object({
-          request: z.string().describe('The user\'s request'),
-          feedback: z.string().optional().describe('Feedback from the evaluator, if any'),
-        }),
       }),
     },
     onFinish: async ({ response }) => {
@@ -555,6 +392,7 @@ export async function POST(req: Request) {
     },
   })
 
+  console.log(`Total request processing time: ${Date.now() - startTime}ms`);
   console.log('Returning stream response')
   return result.toDataStreamResponse({
     headers: {
