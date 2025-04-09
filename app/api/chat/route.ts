@@ -20,6 +20,21 @@ import {
 } from './utils'
 import { createClient } from '@/utils/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { SchemaVectorStore } from '@/utils/vectorStore'
+
+// Define schema rules
+const SCHEMA_RULES = [
+  "Always filter by user role when querying testing_section_students or user_answers tables",
+  "Never assume a table contains data for only one user type without explicit filtering",
+  "Tables may contain data for all users, not just the user type indicated in the table name",
+  "When filtering for 'last year', use academic_year_id = current_year_id - 1, not current_year = FALSE",
+  "Teachers have role = 5, Students have role = 7",
+  "Score calculation formula: (knowledge_score / NULLIF(knowledge_total, 0)) * 100",
+  "Always cast to float for score calculations: knowledge_score::float / knowledge_total::float",
+  "Filter out NULL values before calculations: WHERE knowledge_score IS NOT NULL AND knowledge_total IS NOT NULL",
+  "For dioceses, use 'Diocese of [diocese name]' OR 'Archdiocese of [archdiocese name]'",
+  "Use IDs (not names) for GROUP BY clauses, JOIN conditions, and filtering"
+];
 
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30
@@ -79,220 +94,40 @@ export async function POST(req: Request) {
   }
 
   const projectOpenaiApiKey = process.env.OPENAI_API_KEY
+  if (!projectOpenaiApiKey) {
+    console.error('Missing OpenAI API key in environment')
+    return new Response('Server configuration error', { status: 500 })
+  }
 
   const openai = createOpenAI({
-    // biome-ignore lint/style/noNonNullAssertion: <explanation>
-    apiKey: projectOpenaiApiKey!,
+    apiKey: projectOpenaiApiKey,
   })
 
   const shouldUpdateChats = !chat
+  
+  // Initialize vector store - would typically be done during app setup
+  // but for demonstration we'll do it here
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.error('Missing Supabase configuration')
+    return new Response('Server configuration error', { status: 500 })
+  }
+  
+  const vectorStore = new SchemaVectorStore(
+    supabaseUrl,
+    supabaseServiceKey,
+    projectOpenaiApiKey
+  )
 
   const result = streamText({
     model: openai('gpt-4o'),
     messages: convertToCoreMessages(messages),
     system: `
-      You are a PostgreSQL Query Generator Agent. Your primary responsibility is to generate accurate and efficient SQL queries based on user requests. Follow these guidelines:
-
-      **Direct Query Response Requirement:**
-      - In at least 99% of interactions, if the user's request is related to retrieving data or constructing a query (e.g. "How many users do I have?"), your response must include a SQL query enclosed in a code block. For example, for "How many users do I have?" a correct response would be:
-        
-        \`\`\`sql
-        SELECT COUNT(*) AS total_users
-        FROM users;
-        \`\`\`
-
-      **PRIMARY TABLES AND RULES:**
-      The following tables should be used as the primary source for answering queries, in order of preference:
-      1. Core Testing Tables:
-         - testing_section_students (testing results for all users - MUST filter by user role)
-         - testing_sections (testing sections of a school)
-         - testing_centers (schools)
-         - subject_areas (subject categorization)
+      You are a PostgreSQL Query Generator Agent. Your primary responsibility is to generate accurate and efficient SQL queries based on user requests.
       
-      2. User and Response Tables:
-         - users (user information)
-         - user_answers (user responses to questions)
-         - questions (question content and context)
-      
-      3. Organizational Tables:
-         - dioceses (diocese information)
-         - school_classes (class information)
-         - academic_years (academic year context)
-         - domains (domain categorization)
-         - ark_admin_dashes (admin dashboard data)
-      
-      Rules for table usage:
-      1. ALWAYS try to answer queries using these primary tables first
-      2. Only look for alternative tables if the primary tables cannot provide the required information
-      3. When using alternative tables, explain why the primary tables were insufficient
-      4. Maintain proper join paths and access restrictions regardless of which tables are used
-      5. ALWAYS filter by user role when querying testing_section_students or user_answers tables
-      6. Never assume a table contains data for only one user type without explicit filtering
-
-      **DATA MODEL CONTEXT:**
-      1. Role Types:
-         - Teachers: role = 5
-         - Students: role = 7
-         Use these IDs when filtering by user type
-         IMPORTANT: testing_section_students contains data for ALL users, not just students
-         Always join with users table and filter by role when you need specific user types
-      
-      2. Academic Year Filtering:
-      - When filtering for "last year" or "previous year":
-        - DO NOT use current_year = FALSE (this includes ALL previous years)
-        - DO NOT hardcode year IDs like '2022-2023'
-        - Instead, use academic_year_id = current_year_id - 1
-        - Example: If current_year_id = 5, then last year is id = 4
-        - ALWAYS use relative IDs (current_year_id - 1) for "last year" queries
-        - NEVER assume specific year IDs without checking current_year_id first
-      
-      3. User Answers and Questions:
-         - user_answers table: Contains user responses
-           * Join with questions table using question_id
-           * Join with users table to filter by role
-           * Use these specific question IDs and their corresponding answer IDs for analysis:
-             
-             Eucharist belief question (id = 436): "The Eucharist we receive at Mass is truly the Body and Blood of Jesus Christ."
-             Answer IDs:
-             - 1538 = I believe this
-             - 1539 = I know the Church teaches this, but I struggle to believe it
-             - 1540 = I know the Church teaches this, but I do not believe it
-             - 1542 = I did not know the Church teaches this
-             - 1927 = Blank
-             
-             Mass attendance question (id = 7111): "I attend Mass"
-             Answer IDs:
-             - 1927 = Blank
-             - 29861 = Weekly or more often
-             - 29871 = Sometimes
-             - 29881 = Only at school
-             - 29891 = No
-             
-             Baptism question (id = 7121): "I have been baptized"
-             Answer IDs:
-             - 1927 = Blank
-             - 29901 = Yes
-             - 29911 = No
-             - 29921 = Not sure
-
-      **SCORE CALCULATION RULES:**
-      For any queries involving student scores (knowledge, math, theology, reading):
-      - Score columns in testing_section_students:
-        * knowledge_score: Raw score achieved
-        * knowledge_total: Maximum possible score
-      - Score calculation formula: (knowledge_score / NULLIF(knowledge_total, 0)) * 100
-      - Use NULLIF to prevent division by zero
-      - Handle NULL results with COALESCE to provide a default value (e.g., 0)
-      - Subject areas are stored in the subject_areas table:
-        * Common subjects: 'Math', 'Reading', 'Theology'
-        * Join path: testing_section_students → subject_areas
-      - IMPORTANT: Always join with users table and filter by role = 7 for student scores
-
-      **QUERY RULES:**
-      1. **Table Relationships:**
-         - ALWAYS join back to testing_center table 
-         - Use this join path: table → testing_section_students → testing_sections → testing_center
-         - For subject-specific queries: JOIN subject_areas ON testing_section_students.subject_area_id = subject_areas.id
-         - Optional: JOIN dioceses ON testing_centers.diocese_id = dioceses.id (for diocese details)
-
-      2. **ID Usage Rules:**
-         - ALWAYS use IDs (not names) for:
-           * GROUP BY clauses
-           * JOIN conditions
-           * Aggregations (SUM, AVG, COUNT, etc.)
-           * Calculations
-           * Filtering
-           * DISTINCT operations
-         - Names should ONLY be used for display purposes
-         - Common ID fields to use:
-           * testing_center_id (not testing_center.name)
-           * diocese_id (not diocese.name)
-           * testing_section_id (not testing_section.name)
-           * user_id (not user.name or user.username)
-           * subject_area_id (not subject_area.name)
-         - Example of correct usage:
-           \`\`\`sql
-           -- CORRECT: Group by ID, display name
-           SELECT 
-             tc.id as testing_center_id,
-             tc.name as testing_center_name,
-             AVG(score) as avg_score
-           FROM scores s
-           JOIN testing_centers tc ON s.testing_center_id = tc.id
-           GROUP BY tc.id, tc.name
-           ORDER BY avg_score DESC;
-           
-           -- INCORRECT: Grouping by name
-           SELECT 
-             tc.name as testing_center_name,
-             AVG(score) as avg_score
-           FROM scores s
-           JOIN testing_centers tc ON s.testing_center_id = tc.id
-           GROUP BY tc.name
-           ORDER BY avg_score DESC;
-           \`\`\`
-         - When displaying results:
-           * Include both ID and name in SELECT
-           * Use ID for all operations
-           * Use name only for display
-           * Always join to get the name after calculations are done
-
-      3. **NULL Handling Requirements:**
-      - ALWAYS filter out NULL values and invalid scores:
-        - WHERE knowledge_score IS NOT NULL
-        - WHERE knowledge_total IS NOT NULL
-        - WHERE knowledge_total > 0
-        - WHERE knowledge_score > 0
-      - ALWAYS cast to float for score calculations:
-        - knowledge_score::float
-        - knowledge_total::float
-      - NEVER return NULL scores in results
-      - Filter out invalid data BEFORE calculations
-
-
-      4. **Query Validation:**
-         - Before executing any query, verify it includes the required filters:
-           ${DIOCESE_CONFIG.role === 'super_admin' 
-             ? '// Super admin has no filter restrictions (except dangerous operations)'
-             : `- diocese_id = ${DIOCESE_CONFIG.id}
-                ${DIOCESE_CONFIG.role === 'school_manager' ? `- testing_center_id = ${DIOCESE_CONFIG.testingCenterId}` : ''}`
-           }
-         - Check that all relevant tables are properly joined to testing_center
-         - For subject-specific queries, verify proper join to subject_areas table
-         - Ensure no data from unauthorized dioceses or testing centers can leak through
-         - For score calculations, always cast to float before division
-         - Verify NULL handling for all columns that might contain NULL values
-
-      **SCHEMA VERIFICATION RULES:**
-      1. Before executing any query:
-         - ALWAYS Use getPublicTablesWithColumns to verify all tables and columns exist
-         - If a table or column doesn't exist, look for alternative solutions
-         - Never guess table or column names - always verify first
-
-      2. Role IDs must be used correctly:
-         - Teachers: role = 5
-         - Students: role = 7
-      
-      3. When a required column is missing:
-         - Check for alternative columns that might serve the same purpose
-         - Look for related tables that might contain the needed information
-         - Suggest alternative approaches to achieve the same goal
-         - If no alternative exists, explain why the query cannot be executed
-      
-      4. Schema Navigation Process:
-         - Start by verifying all tables in the query exist
-         - Then verify all columns being selected, joined, or filtered
-         - If any verification fails, revise the query or suggest alternatives
-         - Document any assumptions about schema structure
-
-      When generating queries:
-      1. Always start with the most basic query that answers the request
-      2. Include all required filters and joins
-      3. Use proper score calculations
-      4. Follow the schema verification rules
-      5. Wait for evaluator feedback before making improvements
-
-      After generating a query, you must send it to the Evaluator Agent for review. The evaluator will provide feedback that you must incorporate into your next attempt.
+      The assistant will retrieve relevant schema information based on your query, so you don't need all database details upfront.
     `,
     maxSteps: 22,
     tools: {
@@ -301,9 +136,74 @@ export async function POST(req: Request) {
           'Retrieves a list of tables and their columns from the connected PostgreSQL database.',
         execute: async () => {
           const tables = await getPublicTablesWithColumns(connectionString)
+          
+          // Store tables in vector store if tables retrieved
+          if (tables && tables.length > 0) {
+            try {
+              await vectorStore.initialize()
+              const constraints = await getForeignKeyConstraints(connectionString)
+              // Fix type issue - cast tables to the correct type for storeSchemaInfo
+              const typedTables = tables as unknown as Array<{
+                description?: {
+                  requiresDioceseFilter: boolean;
+                  joinPath: string;
+                  hasDirectDioceseColumn: boolean;
+                  example: string;
+                };
+                tableName: string;
+                schemaName: string;
+                columns: Array<{
+                  name: string;
+                  type: string;
+                  isNullable: boolean;
+                }>;
+              }>;
+              // Fix type issue with constraints
+              const typedConstraints = constraints as unknown as Array<{
+                constraintName: string;
+                tableName: string;
+                columnName: string;
+                foreignTableName: string;
+                foreignColumnName: string;
+              }>;
+              const storedCount = await vectorStore.storeSchemaInfo(typedTables, typedConstraints, SCHEMA_RULES)
+              console.log(`Stored ${storedCount} schema vector entries`)
+            } catch (error) {
+              console.error('Error storing schema in vector store:', error)
+            }
+          }
+          
           return tables
         },
         parameters: z.object({}),
+      }),
+
+      getRelevantSchemaInfo: tool({
+        description: 'Retrieves relevant schema information based on a natural language query.',
+        execute: async ({ query }) => {
+          try {
+            await vectorStore.initialize()
+            const relevantInfo = await vectorStore.searchSchemaInfo(query, 15)
+            
+            // Format the results in a more readable way
+            const formattedResults = relevantInfo.map(info => ({
+              content: info.content,
+              type: info.type,
+              // Type fix - cast similarity from metadata if it exists
+              similarity: (info as any).similarity,
+              table_name: info.table_name,
+              column_name: info.column_name
+            }));
+            
+            return formattedResults
+          } catch (error) {
+            console.error('Error retrieving schema info:', error)
+            throw new Error(`Failed to retrieve schema info: ${error instanceof Error ? error.message : 'Unknown error'}`)
+          }
+        },
+        parameters: z.object({
+          query: z.string().describe('Natural language description of the schema information needed'),
+        }),
       }),
 
       getExplainForQuery: tool({
@@ -362,98 +262,117 @@ export async function POST(req: Request) {
           try {
             console.log('\n=== Query Evaluation Step ===')
             console.log('Query being evaluated:', query)
+
+            // First, verify table and column existence
+            console.log('Verifying table and column existence...')
+            const tables = await getPublicTablesWithColumns(connectionString) as Array<{
+              description?: {
+                requiresDioceseFilter: boolean;
+                joinPath: string;
+                hasDirectDioceseColumn: boolean;
+                example: string;
+              };
+              tableName: string;
+              schemaName: string;
+              columns: Array<{
+                name: string;
+                type: string;
+                isNullable: boolean;
+              }>;
+            }>;
             
+            // Extract table names from the query
+            const tableMatches = query.match(/FROM\s+([a-zA-Z_]+)|JOIN\s+([a-zA-Z_]+)/gi) || []
+            const tablesInQuery = tableMatches.map(match => {
+              const parts = match.split(/\s+/)
+              return parts[parts.length - 1].toLowerCase()
+            })
+
+            // Extract column names from the query
+            const columnMatches = query.match(/\b([a-zA-Z_]+)\.([a-zA-Z_]+)\b/g) || []
+            const columnsInQuery = columnMatches.map(match => {
+              const [table, column] = match.split('.')
+              return { table: table.toLowerCase(), column: column.toLowerCase() }
+            })
+
+            // Verify tables exist
+            const missingTables = tablesInQuery.filter(table => 
+              !tables.some(t => t.tableName.toLowerCase() === table)
+            )
+
+            // Verify columns exist in their respective tables
+            const missingColumns = columnsInQuery.filter(({ table, column }) => {
+              const tableInfo = tables.find(t => t.tableName.toLowerCase() === table)
+              return !tableInfo?.columns.some(c => c.name.toLowerCase() === column)
+            })
+
+            if (missingTables.length > 0 || missingColumns.length > 0) {
+              let errorMessage = 'REJECTED: Schema validation failed.\n'
+              if (missingTables.length > 0) {
+                errorMessage += `Missing tables: ${missingTables.join(', ')}\n`
+              }
+              if (missingColumns.length > 0) {
+                errorMessage += `Missing columns: ${missingColumns.map(({ table, column }) => 
+                  `${table}.${column}`
+                ).join(', ')}`
+              }
+              return errorMessage
+            }
+
+            // Get relevant schema information from vector store for evaluating the query
+            const schemaInfo = await vectorStore.searchSchemaInfo(query, 10)
+            console.log('Retrieved relevant schema info for evaluation')
+            
+            // Extract rules from schema info
+            const relevantRules = schemaInfo
+              .filter(info => info.type === 'rule')
+              .map(info => info.content.replace('Rule: ', ''))
+            
+            // Check for common issues
+            const issues = [];
+
+            // Check role IDs 
+            if (query.includes("role = 'student'") || query.includes("role = 'teacher'")) {
+              issues.push("Role IDs must be numeric: use role = 7 for students and role = 5 for teachers");
+            }
+
+            // Check academic year
+            if (query.match(/year\s*=\s*['"]\d{4}-\d{4}['"]/i)) {
+              issues.push("Academic year must use relative IDs: use academic_year_id = current_year_id - 1 for last year");
+            }
+
+            // Check NULL handling
+            if (!query.includes("WHERE knowledge_score IS NOT NULL") || 
+                !query.includes("WHERE knowledge_total IS NOT NULL")) {
+              issues.push("Must explicitly filter out NULL values: WHERE knowledge_score IS NOT NULL AND knowledge_total IS NOT NULL");
+            }
+
+            // Check score calculation
+            if (!query.includes("NULLIF(knowledge_total, 0)")) {
+              issues.push("Score calculation must use NULLIF: (knowledge_score / NULLIF(knowledge_total, 0)) * 100");
+            }
+
+            if (issues.length > 0) {
+              return `REJECTED: Query validation failed.\n${issues.join('\n')}`;
+            }
+            
+            // Use more dynamic evaluation with retrieved schema info
             const evaluatorPrompt = `
               You are a PostgreSQL Query Evaluator Agent. Your role is to evaluate SQL queries against the following criteria:
+
+              ${relevantRules.length > 0 ? `
+              **RELEVANT RULES FROM SCHEMA:**
+              ${relevantRules.join('\n')}
+              ` : ''}
 
               **Direct Query Response Requirement:**
               - The response must include a SQL query enclosed in a code block
               - The query must be complete and executable
               - The query must directly answer the user's request
 
-              **PRIMARY TABLES AND RULES:**
-              Verify the query uses the correct tables in order of preference:
-              1. Core Testing Tables:
-                 - testing_section_students (testing results for all users - MUST filter by user role)
-                 - testing_sections (testing sections of a school)
-                 - testing_centers (schools)
-                 - subject_areas (subject categorization)
-              
-              2. User and Response Tables:
-                 - users (user information)
-                 - user_answers (user responses to questions)
-                 - questions (question content and context)
-              
-              3. Organizational Tables:
-                 - dioceses (diocese information)
-                 - school_classes (class information)
-                 - academic_years (academic year context)
-                 - domains (domain categorization)
-                 - ark_admin_dashes (admin dashboard data)
-
-              **DATA MODEL CONTEXT:**
-              1. Role Types:
-                 - Teachers: role = 5
-                 - Students: role = 7
-                 - Verify proper role filtering is applied
-                 - Check if testing_section_students is properly joined with users table
-              
-              2. Academic Year Filtering:
-                 - For "last year" or "previous year" queries:
-                   * Verify NOT using current_year = FALSE
-                   * Verify NOT using hardcoded year IDs
-                   * Check for proper use of academic_year_id = current_year_id - 1
-                   * Ensure relative IDs are used (current_year_id - 1)
-                   * Verify no assumptions about specific year IDs
-              
-              3. User Answers and Questions:
-                 - Check proper joins between user_answers, questions, and users tables
-                 - Verify correct question IDs and answer IDs are used
-
-              **SCORE CALCULATION RULES:**
-              For queries involving student scores:
-              - Verify correct score calculation formula: (knowledge_score / NULLIF(knowledge_total, 0)) * 100
-              - Check for proper NULLIF and COALESCE usage
-              - Verify proper join to subject_areas table
-              - Ensure role = 7 filter is applied for student scores
-
-              **QUERY RULES:**
-              1. Table Relationships:
-                 - Verify proper join path: table → testing_section_students → testing_sections → testing_center
-                 - Check proper join to subject_areas for subject-specific queries
-                 - Verify optional diocese join if needed
-
-              2. ID Usage Rules:
-                 - Verify IDs are used for GROUP BY, JOINs, aggregations, calculations, filtering
-                 - Check that names are only used for display purposes
-                 - Verify proper ID and name selection in results
-
-              3. NULL Handling Requirements:
-                 - Verify proper filtering of NULL values and invalid scores:
-                   * WHERE knowledge_score IS NOT NULL
-                   * WHERE knowledge_total IS NOT NULL
-                   * WHERE knowledge_total > 0
-                   * WHERE knowledge_score > 0
-                 - Check proper type casting for score calculations:
-                   * knowledge_score::float
-                   * knowledge_total::float
-                 - Verify no NULL scores in results
-                 - Check that invalid data is filtered BEFORE calculations
-
-              4. Query Validation:
-                 - Verify required filters are present:
-                   ${DIOCESE_CONFIG.role === 'super_admin' 
-                     ? '// Super admin has no filter restrictions (except dangerous operations)'
-                     : `- diocese_id = ${DIOCESE_CONFIG.id}
-                        ${DIOCESE_CONFIG.role === 'school_manager' ? `- testing_center_id = ${DIOCESE_CONFIG.testingCenterId}` : ''}`
-                   }
-                 - Check proper table joins
-                 - Verify score calculation type casting
-                 - Check NULL handling for all relevant columns
-
               **SCHEMA VERIFICATION RULES:**
               1. Table and Column Verification:
-                 - Verify use of getPublicTablesWithColumns to check all tables and columns
+                 - Verify all tables and columns exist
                  - Check for proper handling of missing tables/columns
                  - Verify no guessing of table or column names
 
@@ -505,12 +424,25 @@ export async function POST(req: Request) {
             if (feedback) {
               console.log('Previous feedback:', feedback)
             }
-
+            
+            // Get relevant schema information from vector store
+            const schemaInfo = await vectorStore.searchSchemaInfo(request, 15)
+            console.log('Retrieved relevant schema info for query generation')
+            
+            // Format the schema info for the prompt
+            const formattedSchemaInfo = schemaInfo.map(info => info.content).join('\n\n')
+            
             const generatorPrompt = `
-              You are a PostgreSQL Query Generator Agent. ${feedback ? `Your previous query was rejected with the following feedback:
+              You are a PostgreSQL Query Generator Agent. 
+              
+              ${feedback ? `Your previous query was rejected with the following feedback:
               ${feedback}
               
               Please generate a new query that addresses these concerns.` : 'Please generate a query for the following request:'}
+              
+              Here is relevant schema information retrieved based on your request:
+              
+              ${formattedSchemaInfo}
               
               Request: ${request}
             `
