@@ -58,6 +58,26 @@ export class SchemaVectorStore {
     if (error) throw new Error(`Failed to initialize vector store: ${error.message}`);
   }
 
+  // Clear the vector store - removes all existing schema vectors
+  async clearVectorStore() {
+    console.log('Clearing all schema vectors from the database...');
+    const clearTimerId = `clearVectorStore-${Date.now()}`;
+    console.time(clearTimerId);
+    
+    const { error } = await this.supabaseClient
+      .from(this.tableName)
+      .delete()
+      .neq('id', 'dummy_placeholder'); // Delete all rows
+    
+    if (error) throw new Error(`Failed to clear vector store: ${error.message}`);
+    
+    // Clear the cache as well
+    this.queryCache.clear();
+    
+    console.timeEnd(clearTimerId);
+    console.log('Vector store cleared successfully');
+  }
+
   // Store schema information in the vector store
   async storeSchemaInfo(tables: TableInfo[], constraints: ForeignKeyConstraint[], rules: string[]) {
     const storeTimerId = `storeSchemaInfo-${Date.now()}`;
@@ -77,6 +97,9 @@ export class SchemaVectorStore {
     
     // Process tables and columns
     for (const table of tables) {
+      // Get enhanced table description with domain-specific terms
+      const enhancedTableDescription = getEnhancedTableDescription(table);
+      
       // Create content for the table
       const tableContent = `Table: ${table.tableName}
 Schema: ${table.schemaName}
@@ -86,6 +109,7 @@ Join path: ${table.description.joinPath}
 Has direct diocese column: ${table.description.hasDirectDioceseColumn}
 Example: ${table.description.example}` : 'No description available'
 }
+${enhancedTableDescription}
 Columns: ${table.columns.map(col => col.name).join(', ')}`;
 
       // Add to arrays
@@ -103,11 +127,27 @@ Columns: ${table.columns.map(col => col.name).join(', ')}`;
 
       // Process columns
       for (const column of table.columns) {
+        // Enhanced column descriptions with alternative terminology for better matches
+        let enhancedDescription = column.description || 'No description available';
+        
+        // Add domain-specific alternative terminology for certain columns
+        if (table.tableName === 'testing_section_students' && column.name === 'knowledge_score') {
+          enhancedDescription += '. This represents a student\'s test performance or assessment result.';
+        } else if (table.tableName === 'testing_section_students' && column.name === 'knowledge_total') {
+          enhancedDescription += '. This represents the maximum possible score on a test or assessment.';
+        } else if (table.tableName === 'testing_sections' && column.name === 'section_name') {
+          enhancedDescription += '. This is the name of the test section or assessment area.';
+        } else if (table.tableName === 'diocese_student_snapshot_dcqs' && column.name.includes('attend_mass')) {
+          enhancedDescription += '. This represents mass attendance or church participation.';
+        } else if (table.tableName === 'dioceses' && column.name === 'diocese_name') {
+          enhancedDescription += '. This is the name of the Catholic diocese or archdiocese.';
+        }
+        
         const columnContent = `Column: ${column.name}
 Table: ${table.tableName}
 Type: ${column.type}
 Nullable: ${column.isNullable}
-Description: ${column.description || 'No description available'}`;
+Description: ${enhancedDescription}`;
 
         allContents.push(columnContent);
         contentMappings.push({
@@ -236,7 +276,7 @@ Constraint Name: ${constraint.constraintName}`;
     console.time(searchVecTimerId);
     const { data, error } = await this.supabaseClient.rpc('match_schema_vectors', {
       query_embedding: queryEmbedding,
-      match_threshold: 0.7,
+      match_threshold: 0.5,
       match_count: limit
     });
     console.timeEnd(searchVecTimerId);
@@ -253,5 +293,66 @@ Constraint Name: ${constraint.constraintName}`;
     console.timeEnd(searchTimerId);
     
     return data;
+  }
+}
+
+// Helper function to add domain-specific descriptions to tables
+function getEnhancedTableDescription(table: any): string {
+  // Add domain-specific terminology based on table name
+  switch (table.tableName) {
+    case 'subject_areas':
+      return `Related terms: subjects, academic areas, disciplines, curriculum areas, course subjects.
+This table contains information about different subject areas taught in Catholic education, such as Religion, Math, Science, etc.`;
+      
+    case 'testing_centers':
+      return `Related terms: schools, assessment centers, test locations, evaluation centers.
+This table contains information about schools/enters where educational assessments are administered.`;
+      
+    case 'dioceses':
+      return `Related terms: Catholic dioceses, archdioceses, church districts, episcopal territories.
+This table contains information about Catholic dioceses and archdioceses.`;
+      
+    case 'domains':
+      return `Related terms: knowledge domains, subject domains, content areas, knowledge areas, assessment domains.
+This table contains information about specific domains of knowledge being assessed.`;
+      
+    case 'testing_sections':
+      return `Related terms: test sections, assessment parts, exam sections, test components.
+This table contains information about different sections of assessments or tests.`;
+      
+    case 'ark_admin_dashes':
+      return `Related terms: admin dashboards, administration panels, management interfaces.
+This table contains information about administrative dashboards in the ARK system.`;
+      
+    case 'school_classes':
+      return `Related terms: classes, student groups, course sections, grade groups.
+This table contains information about school classes or student groups.`;
+      
+    case 'testing_section_students':
+      return `Related terms: student test results, assessment scores, student performance, test outcomes, exam results.
+This table contains information about student performance on test sections, including knowledge scores and totals.`;
+      
+    case 'testing_center_dashboards':
+      return `Related terms: testing center analytics, assessment center reports, test center statistics.
+This table contains dashboard information for testing centers.`;
+      
+    case 'tc_grade_levels_snapshot_dcqs':
+      return `Related terms: grade level DCQ snapshots, diocesan assessment snapshots by grade, grade level catechetical assessment data.
+This table contains diocesan catechetical questionnaire (DCQ) data aggregated by grade levels.`;
+      
+    case 'tc_grade_levels_snapshots':
+      return `Related terms: grade level snapshots, grade assessment summaries, class level performance data.
+This table contains assessment performance snapshots aggregated by grade levels.`;
+      
+    case 'diocese_student_snapshot_dcqs':
+      return `Related terms: diocesan student DCQ data, student catechetical questionnaire results, religious assessment data.
+This table contains diocesan catechetical questionnaire data for students, including information about mass attendance.`;
+      
+    case 'diocese_student_snapshot_grade_levels':
+      return `Related terms: diocesan grade level snapshots, diocese assessment data by grade, grade level performance in dioceses.
+This table contains assessment data for students grouped by grade levels within dioceses.`;
+      
+    default:
+      return '';
   }
 } 

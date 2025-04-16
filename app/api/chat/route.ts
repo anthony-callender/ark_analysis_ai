@@ -22,6 +22,23 @@ import { createClient } from '@/utils/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { SchemaVectorStore } from '@/utils/vectorStore'
 
+// Define the list of target tables for vector store
+const TARGET_TABLES = [
+  'subject_areas',
+  'testing_centers',
+  'dioceses',
+  'domains',
+  'testing_sections',
+  'ark_admin_dashes',
+  'school_classes',
+  'testing_section_students',
+  'testing_center_dashboards',
+  'tc_grade_levels_snapshot_dcqs',
+  'tc_grade_levels_snapshots',
+  'diocese_student_snapshot_dcqs',
+  'diocese_student_snapshot_grade_levels',
+];
+
 // Define schema rules
 const SCHEMA_RULES = [
   "Always filter by user role when querying testing_section_students or user_answers tables",
@@ -61,6 +78,41 @@ async function getVectorStore(apiKey: string): Promise<SchemaVectorStore> {
   }
   
   return vectorStoreInstance;
+}
+
+// Force rebuild of schema vectors with filtered tables
+export async function GET(req: Request) {
+  const searchParams = new URL(req.url).searchParams;
+  const action = searchParams.get('action');
+  
+  if (action === 'rebuild_vectors') {
+    try {
+      // Get the vector store
+      const projectOpenaiApiKey = process.env.OPENAI_API_KEY;
+      if (!projectOpenaiApiKey) {
+        return new Response('Missing OpenAI API Key', { status: 500 });
+      }
+      
+      const vectorStore = await getVectorStore(projectOpenaiApiKey);
+      
+      // Clear existing vectors
+      await vectorStore.clearVectorStore();
+      
+      // Reset schema stored flag
+      schemaStored = false;
+      
+      return new Response('Vector store cleared. It will be rebuilt on the next query with filtered tables.', { 
+        status: 200 
+      });
+    } catch (error) {
+      console.error('Error rebuilding vector store:', error);
+      return new Response(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`, { 
+        status: 500 
+      });
+    }
+  }
+  
+  return new Response('Use ?action=rebuild_vectors to rebuild the vector store', { status: 200 });
 }
 
 // Allow streaming responses up to 30 seconds
@@ -154,14 +206,18 @@ export async function POST(req: Request) {
     system: `
      You are a PostgreSQL Query Generator Agent. Your primary responsibility is to generate accurate and efficient SQL queries based on user requests.
      
+     IMPORTANT: This application uses a focused set of tables specifically selected for key analytical questions. 
+     Only work with the tables returned by the getPublicTablesWithColumns tool - do not reference any other tables.
+     
      The assistant will retrieve relevant schema information based on your query, so you don't need all database details upfront.
      
      When generating queries:
      1. Always verify the table and column existence using the getPublicTablesWithColumns tool
-     2. Include all required filters and joins
-     3. Use proper score calculations with NULLIF and type casting
-     4. Follow the schema rules provided in the relevant schema information
-     5. Present the final SQL query in a code block
+     2. Only use tables from the returned list - never reference tables not in this list
+     3. Include all required filters and joins
+     4. Use proper score calculations with NULLIF and type casting
+     5. Follow the schema rules provided in the relevant schema information
+     6. Present the final SQL query in a code block
     `,
     maxSteps: 22,
     tools: {
@@ -181,8 +237,16 @@ export async function POST(req: Request) {
               console.time(schemaTimerId);
               
               const constraints = await getForeignKeyConstraints(connectionString)
+              
+              // Filter tables to only include target tables
+              const filteredTables = Array.isArray(tables) 
+                ? tables.filter((table: any) => TARGET_TABLES.includes(table.tableName))
+                : [];
+              
+              console.log(`Filtered ${Array.isArray(tables) ? tables.length : 0} tables to ${filteredTables.length} target tables`);
+              
               // Fix type issue - cast tables to the correct type for storeSchemaInfo
-              const typedTables = tables as unknown as Array<{
+              const typedTables = filteredTables as unknown as Array<{
                 description?: {
                   requiresDioceseFilter: boolean;
                   joinPath: string;
@@ -197,8 +261,19 @@ export async function POST(req: Request) {
                   isNullable: boolean;
                 }>;
               }>;
+              
+              // Filter constraints to only include relationships between target tables
+              const filteredConstraints = Array.isArray(constraints)
+                ? constraints.filter((constraint: any) => 
+                    TARGET_TABLES.includes(constraint.tableName) && 
+                    TARGET_TABLES.includes(constraint.foreignTableName)
+                  )
+                : [];
+              
+              console.log(`Filtered ${Array.isArray(constraints) ? constraints.length : 0} constraints to ${filteredConstraints.length} relevant constraints`);
+              
               // Fix type issue with constraints
-              const typedConstraints = constraints as unknown as Array<{
+              const typedConstraints = filteredConstraints as unknown as Array<{
                 constraintName: string;
                 tableName: string;
                 columnName: string;
@@ -219,7 +294,14 @@ export async function POST(req: Request) {
           }
           
           console.timeEnd(tablesTimerId);
-          return tables
+          
+          // Return only the target tables to ensure consistency with vector store
+          const filteredTablesToReturn = Array.isArray(tables) 
+            ? tables.filter((table: any) => TARGET_TABLES.includes(table.tableName))
+            : [];
+            
+          console.log(`Returning ${filteredTablesToReturn.length} target tables to the model`);
+          return filteredTablesToReturn;
         },
         parameters: z.object({}),
       }),
@@ -258,6 +340,32 @@ export async function POST(req: Request) {
         description:
           "Analyzes and optimizes a given SQL query, providing a detailed execution plan in JSON format.",
         execute: async ({ query }) => {
+          // Extract table names from the query using a different approach to avoid iterator issues
+          const tableRegex = /\b(from|join)\s+([a-zA-Z0-9_]+)\b/gi;
+          const tablesInQuery: string[] = [];
+          let match;
+          
+          while ((match = tableRegex.exec(query)) !== null) {
+            tablesInQuery.push(match[2].toLowerCase());
+          }
+          
+          // Check if any table in the query is not in our target tables
+          const targetTablesLower = TARGET_TABLES.map(t => t.toLowerCase());
+          const nonTargetTables = tablesInQuery.filter(
+            table => !targetTablesLower.includes(table)
+          );
+          
+          if (nonTargetTables.length > 0) {
+            console.warn(`Query references non-target tables: ${nonTargetTables.join(', ')}`);
+            return {
+              warning: "This query references tables that are not in the target set. Please ensure you only use the tables returned by getPublicTablesWithColumns.",
+              tables_referenced: tablesInQuery,
+              non_target_tables: nonTargetTables,
+              tables_available: TARGET_TABLES,
+              explain: await getExplainForQuery(query, connectionString)
+            };
+          }
+          
           const explain = await getExplainForQuery(query, connectionString)
           return explain
         },
@@ -270,7 +378,14 @@ export async function POST(req: Request) {
         description: 'Retrieves usage statistics for indexes in the database.',
         execute: async () => {
           const indexStats = await getIndexStatsUsage(connectionString)
-          return indexStats
+          
+          // Filter index stats to only include those from target tables
+          const filteredIndexStats = Array.isArray(indexStats)
+            ? indexStats.filter((stat: any) => TARGET_TABLES.includes(stat.table_name))
+            : [];
+          
+          console.log(`Returning usage statistics for ${filteredIndexStats.length} indexes on target tables`);
+          return filteredIndexStats;
         },
         parameters: z.object({}),
       }),
@@ -279,7 +394,14 @@ export async function POST(req: Request) {
         description: 'Retrieves the indexes present in the connected database.',
         execute: async () => {
           const indexes = await getIndexes(connectionString)
-          return indexes
+          
+          // Filter indexes to only include those from target tables
+          const filteredIndexes = Array.isArray(indexes)
+            ? indexes.filter((index: any) => TARGET_TABLES.includes(index.table_name))
+            : [];
+          
+          console.log(`Returning ${filteredIndexes.length} indexes for target tables`);
+          return filteredIndexes;
         },
         parameters: z.object({}),
       }),
@@ -289,7 +411,14 @@ export async function POST(req: Request) {
           'Retrieves statistics about tables, including row counts and sizes.',
         execute: async () => {
           const stats = await getTableStats(connectionString)
-          return stats
+          
+          // Filter stats to only include target tables
+          const filteredStats = Array.isArray(stats)
+            ? stats.filter((stat: any) => TARGET_TABLES.includes(stat.table_name))
+            : [];
+          
+          console.log(`Returning statistics for ${filteredStats.length} target tables`);
+          return filteredStats;
         },
         parameters: z.object({}),
       }),
@@ -299,7 +428,17 @@ export async function POST(req: Request) {
           'Retrieves information about foreign key relationships between tables.',
         execute: async () => {
           const constraints = await getForeignKeyConstraints(connectionString)
-          return constraints
+          
+          // Filter constraints to only include relationships between target tables
+          const filteredConstraints = Array.isArray(constraints)
+            ? constraints.filter((constraint: any) => 
+                TARGET_TABLES.includes(constraint.tableName) && 
+                TARGET_TABLES.includes(constraint.foreignTableName)
+              )
+            : [];
+          
+          console.log(`Returning ${filteredConstraints.length} foreign key constraints for target tables`);
+          return filteredConstraints;
         },
         parameters: z.object({}),
       }),
