@@ -59,8 +59,9 @@ This document provides instructions for the optimized schema approach in the ARK
 The application has been optimized with a streamlined approach:
 
 1. **Direct Table Access**: The application provides direct access to all 13 key tables via `getPublicTablesWithColumns`
-2. **Vector-Based Rule Retrieval**: The vector store contains ONLY schema rules, not table/column information
-3. **Focused Table Selection**: Limited to only the most relevant tables for common analytical questions
+2. **Vector-Based Documentation Retrieval**: The vector store contains ONLY documentation, not table/column information
+3. **Comprehensive Documentation**: Includes table descriptions, query patterns, and schema guidance
+4. **Balanced Similarity Threshold**: Uses a 0.29 threshold for better relevance without losing important context
 
 ## Target Tables
 
@@ -82,13 +83,22 @@ The application focuses exclusively on these key tables:
 - diocese_student_snapshot_grade_levels
 ```
 
+## Documentation Content
+
+The vector store includes rich documentation:
+
+1. **Table Documentation**: Detailed descriptions of each table's purpose and columns
+2. **Query Patterns**: Hierarchical relation patterns for common query types
+3. **Schema Guidance**: Rules for filtering, score calculation, and table usage
+4. **Domain Knowledge**: Information about academic years, roles, and domain-specific knowledge
+
 ## Architecture Benefits
 
 This hybrid approach offers several advantages:
 
 1. **Deterministic Table Access**: The LLM always has access to a complete, consistent list of tables
-2. **Semantic Rule Matching**: Vector search finds only the most relevant schema rules for each query
-3. **Reduced Complexity**: No need to encode table/column information into vectors
+2. **Semantic Documentation Matching**: Vector search finds only the most relevant documentation for each query
+3. **Structured Knowledge Base**: Documentation is categorized by type and topic
 4. **Tool-Specific Roles**: Each tool has a clear, focused purpose
 
 ## Tool Consistency
@@ -96,7 +106,7 @@ This hybrid approach offers several advantages:
 All tools consistently filter to target tables only:
 
 1. **getPublicTablesWithColumns**: Returns all 13 target tables and their columns
-2. **getRelevantSchemaInfo**: Returns only schema rules relevant to the query
+2. **getRelevantDocumentation**: Returns only documentation relevant to the query
 3. **getForeignKeyConstraints**: Returns only constraints between target tables
 4. **getTableStats**: Returns statistics for target tables only
 5. **getIndexes**: Returns indexes for target tables only
@@ -117,6 +127,19 @@ All tools consistently filter to target tables only:
 
 3. Make a new query in the application to see the new architecture in action.
 
+## Test Documentation Retrieval
+
+To test how documentation is retrieved for specific queries:
+
+```
+http://localhost:3000/api/chat?action=test_retrieval&query=your query here
+```
+
+This endpoint shows:
+- All documentation in the vector store
+- Documentation retrieved for your specific query
+- Similarity scores for each match
+
 ## Testing Your Queries
 
 After rebuilding the vector store, try these example queries:
@@ -124,5 +147,7 @@ After rebuilding the vector store, try these example queries:
 1. "What is the average knowledge score for students who attend mass?"
 2. "Show me test performance by diocese"
 3. "Which testing centers have the highest scores?"
+4. "What is the hierarchy for queries about subject performance?"
+5. "How do I get information for the 2023 academic year?"
 
-These should now work effectively with the new streamlined architecture.
+These should now work effectively with the comprehensive documentation in the vector store.

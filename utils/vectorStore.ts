@@ -32,7 +32,7 @@ export interface ForeignKeyConstraint {
 export interface SchemaVectorEntry {
   id: string;
   content: string;
-  type: 'table' | 'column' | 'relation' | 'rule' | 'query_example';
+  type: 'table' | 'column' | 'relation' | 'rule' | 'documentation' | 'query_example';
   embedding: number[];
   table_name?: string;
   column_name?: string;
@@ -79,7 +79,7 @@ export class SchemaVectorStore {
   }
 
   // Store schema information in the vector store
-  async storeSchemaInfo(tables: TableInfo[], constraints: ForeignKeyConstraint[], rules: string[]) {
+  async storeSchemaInfo(tables: TableInfo[], constraints: ForeignKeyConstraint[], documentation: string[]) {
     const storeTimerId = `storeSchemaInfo-${Date.now()}`;
     console.time(storeTimerId);
     
@@ -87,29 +87,29 @@ export class SchemaVectorStore {
     const allContents: string[] = [];
     const contentMappings: {
       id: string; 
-      type: 'rule';
+      type: 'documentation';
       content: string;
       metadata?: Record<string, any>;
     }[] = [];
     
-    console.log(`Processing ${rules.length} rules for vector storage`);
+    console.log(`Processing ${documentation.length} documentation entries for vector storage`);
     
-    // Process rules only - we don't store tables and columns in the vector store anymore
-    for (let i = 0; i < rules.length; i++) {
-      // Add domain-specific context to each rule
-      const enhancedRule = this.enhanceRuleWithContext(rules[i], i);
-      const ruleContent = `Rule: ${enhancedRule}`;
+    // Process documentation entries - we don't store tables and columns in the vector store anymore
+    for (let i = 0; i < documentation.length; i++) {
+      // Add context categorization to documentation
+      const enhancedDocumentation = this.enhanceDocumentationWithContext(documentation[i], i);
+      const docContent = `Documentation: ${enhancedDocumentation}`;
       
-      allContents.push(ruleContent);
+      allContents.push(docContent);
       contentMappings.push({
-        id: `rule_${i}`,
-        content: ruleContent,
-        type: 'rule',
-        metadata: { rule_index: i }
+        id: `documentation_${i}`,
+        content: docContent,
+        type: 'documentation',
+        metadata: { doc_index: i }
       });
     }
 
-    console.log(`Generating embeddings for ${allContents.length} rules in a single batch call`);
+    console.log(`Generating embeddings for ${allContents.length} documentation entries in a single batch call`);
     const batchTimerId = `batchEmbedding-${Date.now()}`;
     console.time(batchTimerId);
     
@@ -158,20 +158,41 @@ export class SchemaVectorStore {
     return uniqueEntries.length;
   }
 
-  // Helper method to enhance rules with more context for better retrieval
-  private enhanceRuleWithContext(rule: string, index: number): string {
-    // Add additional context to each rule based on its content
-    if (rule.includes('filtering')) {
-      return `${rule} (Context: This rule applies to queries that filter data by specific conditions)`;
-    } else if (rule.includes('score')) {
-      return `${rule} (Context: This rule applies to calculations involving knowledge scores, assessment results, or student performance metrics)`;
-    } else if (rule.includes('diocese')) {
-      return `${rule} (Context: This rule applies to diocese-related queries, including mass attendance and religious practices)`;
-    } else if (rule.includes('user role') || rule.includes('role =')) {
-      return `${rule} (Context: This rule applies to distinguishing between different user types such as teachers and students)`;
-    } else {
-      return rule;
+  // Helper method to enhance documentation with context categorization
+  private enhanceDocumentationWithContext(doc: string, index: number): string {
+    // Categorize documentation based on content
+    if (doc.includes('table') && doc.includes('attributes') && doc.includes('Key attributes include')) {
+      // Table documentation with table name in single quotes
+      const tableMatch = doc.match(/'([^']+)'/);
+      const tableName = tableMatch ? tableMatch[1] : 'unknown table';
+      return `[Table Documentation - ${tableName}] ${doc}`;
+    } 
+    else if (doc.includes('hierarchy') && doc.includes('->')) {
+      return `[Query Pattern] ${doc}`;
     }
+    else if (doc.includes('filtering')) {
+      return `[Filtering Rule] ${doc}`;
+    } 
+    else if (doc.includes('score')) {
+      return `[Score Calculation] ${doc}`;
+    } 
+    else if (doc.includes('diocese')) {
+      return `[Diocese Information] ${doc}`;
+    } 
+    else if (doc.includes('user role') || doc.includes('role =') || doc.includes('role id')) {
+      return `[User Roles] ${doc}`;
+    } 
+    else if (doc.includes('academic_year')) {
+      return `[Academic Year] ${doc}`;
+    }
+    else {
+      return `[General Documentation] ${doc}`;
+    }
+  }
+
+  // Get the Supabase client (used for diagnostics)
+  getSupabaseClient() {
+    return this.supabaseClient;
   }
 
   // Search the vector store for relevant schema information
@@ -202,7 +223,7 @@ export class SchemaVectorStore {
     console.time(searchVecTimerId);
     const { data, error } = await this.supabaseClient.rpc('match_schema_vectors', {
       query_embedding: queryEmbedding,
-      match_threshold: 0.5,
+      match_threshold: 0.29,
       match_count: limit
     });
     console.timeEnd(searchVecTimerId);
@@ -215,7 +236,15 @@ export class SchemaVectorStore {
     // Store in cache
     this.queryCache.set(cacheKey, { timestamp: now, results: data });
     
-    console.log(`Found ${data.length} relevant schema items`);
+    console.log(`Found ${data.length} relevant documentation items with threshold 0.29`);
+    // Add detailed logging to show similarity scores
+    if (data && data.length > 0) {
+      console.log('Similarity scores:');
+      data.forEach((item: any, index: number) => {
+        console.log(`  ${index + 1}. ${item.content.substring(0, 50)}... | Score: ${item.similarity.toFixed(4)}`);
+      });
+    }
+    
     console.timeEnd(searchTimerId);
     
     return data;

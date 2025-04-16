@@ -26,13 +26,18 @@ async function testVectorStore() {
     await vectorStore.initialize();
     console.log('Vector store initialized successfully');
     
+    // Get all documentation from database to verify storage
+    await listAllDocumentationInVectorStore(vectorStore);
+    
     // Test queries
     const testQueries = [
       "What is the average knowledge score for students who attend mass?",
       "Show me test performance by diocese",
       "Which testing centers have the highest scores?",
       "How many students attend mass regularly?",
-      "What are the knowledge scores for different grade levels?"
+      "What are the knowledge scores for different grade levels?",
+      "How do I get the academic year for 2023?",
+      "What is the hierarchy for accessing subject information?"
     ];
     
     console.log('\n=== Running Test Queries ===\n');
@@ -41,15 +46,16 @@ async function testVectorStore() {
       console.log(`\nQuery: "${query}"`);
       
       try {
-        const results = await vectorStore.searchSchemaInfo(query, 5);
-        console.log(`Found ${results.length} relevant schema items:`);
+        const results = await vectorStore.searchSchemaInfo(query, 20);
+        console.log(`Found ${results.length} relevant documentation items:`);
         
         if (results.length > 0) {
           for (const result of results) {
-            console.log(`- ${result.type}: ${result.table_name}${result.column_name ? `.${result.column_name}` : ''} (Similarity: ${result.similarity.toFixed(4)})`);
+            console.log(`- ${result.type}: ${result.content}`);
+            console.log(`  Similarity: ${result.similarity.toFixed(4)}`);
           }
         } else {
-          console.log('No relevant schema items found.');
+          console.log('No relevant documentation found.');
         }
       } catch (error) {
         console.error(`Error searching for query "${query}":`, error);
@@ -60,6 +66,41 @@ async function testVectorStore() {
     
   } catch (error) {
     console.error('Error testing vector store:', error);
+  }
+}
+
+// Helper function to list all documentation stored in the vector store
+async function listAllDocumentationInVectorStore(vectorStore) {
+  try {
+    console.log('\n=== Listing All Documentation in Vector Store ===\n');
+    
+    // Access Supabase directly to get all documentation
+    const client = vectorStore.getSupabaseClient();
+    const { data, error } = await client
+      .from('schema_vectors')
+      .select('*')
+      .eq('type', 'documentation')
+      .order('id');
+    
+    if (error) {
+      throw new Error(`Failed to retrieve documentation: ${error.message}`);
+    }
+    
+    console.log(`Found ${data.length} documentation entries in the vector store:`);
+    
+    if (data.length > 0) {
+      for (let i = 0; i < data.length; i++) {
+        console.log(`${i + 1}. ${data[i].content}`);
+      }
+    } else {
+      console.log('No documentation found in the vector store.');
+    }
+    
+    console.log('\n=== End of Documentation Listing ===\n');
+    return data;
+  } catch (error) {
+    console.error('Error listing documentation:', error);
+    return [];
   }
 }
 
