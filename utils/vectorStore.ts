@@ -82,113 +82,23 @@ export class SchemaVectorStore {
   async storeSchemaInfo(tables: TableInfo[], constraints: ForeignKeyConstraint[], rules: string[]) {
     const storeTimerId = `storeSchemaInfo-${Date.now()}`;
     console.time(storeTimerId);
+    
     // Prepare arrays to collect content and metadata
     const allContents: string[] = [];
     const contentMappings: {
       id: string; 
-      type: 'table' | 'column' | 'relation' | 'rule';
+      type: 'rule';
       content: string;
-      table_name?: string;
-      column_name?: string;
       metadata?: Record<string, any>;
     }[] = [];
     
-    console.log(`Processing ${tables.length} tables, ${constraints.length} constraints, and ${rules.length} rules`);
+    console.log(`Processing ${rules.length} rules for vector storage`);
     
-    // Process tables and columns
-    for (const table of tables) {
-      // Get enhanced table description with domain-specific terms
-      const enhancedTableDescription = getEnhancedTableDescription(table);
-      
-      // Create content for the table
-      const tableContent = `Table: ${table.tableName}
-Schema: ${table.schemaName}
-Description: ${table.description ? 
-  `This table ${table.description.requiresDioceseFilter ? 'requires diocese filtering' : 'does not require diocese filtering'}.
-Join path: ${table.description.joinPath}
-Has direct diocese column: ${table.description.hasDirectDioceseColumn}
-Example: ${table.description.example}` : 'No description available'
-}
-${enhancedTableDescription}
-Columns: ${table.columns.map(col => col.name).join(', ')}`;
-
-      // Add to arrays
-      allContents.push(tableContent);
-      contentMappings.push({
-        id: `table_${table.tableName}`,
-        content: tableContent,
-        type: 'table',
-        table_name: table.tableName,
-        metadata: {
-          schema: table.schemaName,
-          description: table.description
-        }
-      });
-
-      // Process columns
-      for (const column of table.columns) {
-        // Enhanced column descriptions with alternative terminology for better matches
-        let enhancedDescription = column.description || 'No description available';
-        
-        // Add domain-specific alternative terminology for certain columns
-        if (table.tableName === 'testing_section_students' && column.name === 'knowledge_score') {
-          enhancedDescription += '. This represents a student\'s test performance or assessment result.';
-        } else if (table.tableName === 'testing_section_students' && column.name === 'knowledge_total') {
-          enhancedDescription += '. This represents the maximum possible score on a test or assessment.';
-        } else if (table.tableName === 'testing_sections' && column.name === 'section_name') {
-          enhancedDescription += '. This is the name of the test section or assessment area.';
-        } else if (table.tableName === 'diocese_student_snapshot_dcqs' && column.name.includes('attend_mass')) {
-          enhancedDescription += '. This represents mass attendance or church participation.';
-        } else if (table.tableName === 'dioceses' && column.name === 'diocese_name') {
-          enhancedDescription += '. This is the name of the Catholic diocese or archdiocese.';
-        }
-        
-        const columnContent = `Column: ${column.name}
-Table: ${table.tableName}
-Type: ${column.type}
-Nullable: ${column.isNullable}
-Description: ${enhancedDescription}`;
-
-        allContents.push(columnContent);
-        contentMappings.push({
-          id: `column_${table.tableName}_${column.name}`,
-          content: columnContent,
-          type: 'column',
-          table_name: table.tableName,
-          column_name: column.name,
-          metadata: {
-            data_type: column.type,
-            is_nullable: column.isNullable
-          }
-        });
-      }
-    }
-
-    // Process foreign key constraints
-    for (const constraint of constraints) {
-      const relationContent = `Relation:
-Table: ${constraint.tableName} 
-Column: ${constraint.columnName}
-References: ${constraint.foreignTableName}.${constraint.foreignColumnName}
-Constraint Name: ${constraint.constraintName}`;
-
-      allContents.push(relationContent);
-      contentMappings.push({
-        id: `relation_${constraint.constraintName}`,
-        content: relationContent,
-        type: 'relation',
-        metadata: {
-          table_name: constraint.tableName,
-          column_name: constraint.columnName,
-          foreign_table: constraint.foreignTableName,
-          foreign_column: constraint.foreignColumnName
-        }
-      });
-    }
-
-    // Process rules
+    // Process rules only - we don't store tables and columns in the vector store anymore
     for (let i = 0; i < rules.length; i++) {
-      const ruleContent = `Rule: ${rules[i]}`;
+      // Add domain-specific context to each rule
+      const enhancedRule = this.enhanceRuleWithContext(rules[i], i);
+      const ruleContent = `Rule: ${enhancedRule}`;
       
       allContents.push(ruleContent);
       contentMappings.push({
@@ -199,7 +109,7 @@ Constraint Name: ${constraint.constraintName}`;
       });
     }
 
-    console.log(`Generating embeddings for ${allContents.length} items in a single batch call`);
+    console.log(`Generating embeddings for ${allContents.length} rules in a single batch call`);
     const batchTimerId = `batchEmbedding-${Date.now()}`;
     console.time(batchTimerId);
     
@@ -214,8 +124,8 @@ Constraint Name: ${constraint.constraintName}`;
       content: mapping.content,
       type: mapping.type,
       embedding: allEmbeddings[index],
-      table_name: mapping.table_name,
-      column_name: mapping.column_name,
+      table_name: undefined,
+      column_name: undefined,
       metadata: mapping.metadata
     }));
 
@@ -246,6 +156,22 @@ Constraint Name: ${constraint.constraintName}`;
     console.timeEnd(storeTimerId);
     
     return uniqueEntries.length;
+  }
+
+  // Helper method to enhance rules with more context for better retrieval
+  private enhanceRuleWithContext(rule: string, index: number): string {
+    // Add additional context to each rule based on its content
+    if (rule.includes('filtering')) {
+      return `${rule} (Context: This rule applies to queries that filter data by specific conditions)`;
+    } else if (rule.includes('score')) {
+      return `${rule} (Context: This rule applies to calculations involving knowledge scores, assessment results, or student performance metrics)`;
+    } else if (rule.includes('diocese')) {
+      return `${rule} (Context: This rule applies to diocese-related queries, including mass attendance and religious practices)`;
+    } else if (rule.includes('user role') || rule.includes('role =')) {
+      return `${rule} (Context: This rule applies to distinguishing between different user types such as teachers and students)`;
+    } else {
+      return rule;
+    }
   }
 
   // Search the vector store for relevant schema information

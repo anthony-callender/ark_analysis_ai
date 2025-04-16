@@ -50,13 +50,21 @@ pnpm run dev
 - [Shadcn](https://ui.shadcn.com/) for the UI
 - [Aceternity](https://aceternity.com/) for the UI
 
-# ARK Analysis AI Vector Store Optimization
+# ARK Analysis AI Schema Optimization
 
-This document provides instructions for rebuilding the vector store with a filtered set of target tables to improve retrieval performance.
+This document provides instructions for the optimized schema approach in the ARK Analysis AI application.
 
-## Filtered Target Tables
+## Streamlined Architecture
 
-The application has been optimized to focus only on these key tables:
+The application has been optimized with a streamlined approach:
+
+1. **Direct Table Access**: The application provides direct access to all 13 key tables via `getPublicTablesWithColumns`
+2. **Vector-Based Rule Retrieval**: The vector store contains ONLY schema rules, not table/column information
+3. **Focused Table Selection**: Limited to only the most relevant tables for common analytical questions
+
+## Target Tables
+
+The application focuses exclusively on these key tables:
 
 ```
 - subject_areas
@@ -74,26 +82,26 @@ The application has been optimized to focus only on these key tables:
 - diocese_student_snapshot_grade_levels
 ```
 
-## Improvements Made
+## Architecture Benefits
 
-1. **Focused Table Selection**: Reduced the number of tables to only those most relevant to common queries.
-2. **Enhanced Descriptions**: Added domain-specific terminology to table and column descriptions.
-3. **Lower Similarity Threshold**: Reduced the match threshold from 0.7 to 0.5 to capture more potential matches.
-4. **Improved Semantic Context**: Added alternative phrasings for columns like `knowledge_score` and `attend_mass`.
-5. **Complete System Consistency**: All tools consistently filter to target tables only.
+This hybrid approach offers several advantages:
 
-## Tool Consistency Updates
+1. **Deterministic Table Access**: The LLM always has access to a complete, consistent list of tables
+2. **Semantic Rule Matching**: Vector search finds only the most relevant schema rules for each query
+3. **Reduced Complexity**: No need to encode table/column information into vectors
+4. **Tool-Specific Roles**: Each tool has a clear, focused purpose
 
-All tools have been updated to maintain consistency with the target tables approach:
+## Tool Consistency
 
-1. **getPublicTablesWithColumns**: Only returns the target tables
-2. **getForeignKeyConstraints**: Only returns constraints between target tables
-3. **getTableStats**: Only returns statistics for target tables
-4. **getIndexes**: Only returns indexes for target tables
-5. **getIndexStatsUsage**: Only returns index usage for target tables
-6. **getExplainForQuery**: Warns if non-target tables are referenced in queries
+All tools consistently filter to target tables only:
 
-This ensures that the model only works with the tables that are available in the vector store, preventing confusion or inconsistent results.
+1. **getPublicTablesWithColumns**: Returns all 13 target tables and their columns
+2. **getRelevantSchemaInfo**: Returns only schema rules relevant to the query
+3. **getForeignKeyConstraints**: Returns only constraints between target tables
+4. **getTableStats**: Returns statistics for target tables only
+5. **getIndexes**: Returns indexes for target tables only
+6. **getIndexStatsUsage**: Returns index usage for target tables only
+7. **getExplainForQuery**: Warns if non-target tables are referenced
 
 ## How to Rebuild the Vector Store
 
@@ -107,15 +115,7 @@ This ensures that the model only works with the tables that are available in the
    http://localhost:3000/api/chat?action=rebuild_vectors
    ```
 
-3. Make a new query in the application. The vector store will be rebuilt with only the target tables when the first query is made after clearing.
-
-## Troubleshooting
-
-If you're still getting "0 relevant schema items" for certain queries:
-
-1. Check if your query terminology aligns with the schema descriptions
-2. Review the server logs to see the similarity scores
-3. Consider adding more domain-specific terms to the table/column descriptions in `utils/vectorStore.ts`
+3. Make a new query in the application to see the new architecture in action.
 
 ## Testing Your Queries
 
@@ -125,4 +125,4 @@ After rebuilding the vector store, try these example queries:
 2. "Show me test performance by diocese"
 3. "Which testing centers have the highest scores?"
 
-These should now return relevant schema information with the optimized vector store.
+These should now work effectively with the new streamlined architecture.

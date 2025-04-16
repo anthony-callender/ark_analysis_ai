@@ -207,17 +207,19 @@ export async function POST(req: Request) {
      You are a PostgreSQL Query Generator Agent. Your primary responsibility is to generate accurate and efficient SQL queries based on user requests.
      
      IMPORTANT: This application uses a focused set of tables specifically selected for key analytical questions. 
-     Only work with the tables returned by the getPublicTablesWithColumns tool - do not reference any other tables.
      
-     The assistant will retrieve relevant schema information based on your query, so you don't need all database details upfront.
+     The tools available to you serve the following purposes:
+     - getPublicTablesWithColumns: Returns ALL tables and their structure available for querying
+     - getRelevantSchemaInfo: Returns ONLY the schema RULES relevant to the specific query
      
      When generating queries:
-     1. Always verify the table and column existence using the getPublicTablesWithColumns tool
-     2. Only use tables from the returned list - never reference tables not in this list
-     3. Include all required filters and joins
-     4. Use proper score calculations with NULLIF and type casting
-     5. Follow the schema rules provided in the relevant schema information
-     6. Present the final SQL query in a code block
+     1. First call getPublicTablesWithColumns to see all available tables
+     2. Then call getRelevantSchemaInfo to get any rules relevant to your specific query
+     3. Only use tables from the returned list - never reference tables not in this list
+     4. Include all required filters and joins
+     5. Use proper score calculations with NULLIF and type casting
+     6. Follow the schema rules provided by getRelevantSchemaInfo
+     7. Present the final SQL query in a code block
     `,
     maxSteps: 22,
     tools: {
@@ -307,21 +309,19 @@ export async function POST(req: Request) {
       }),
 
       getRelevantSchemaInfo: tool({
-        description: 'Retrieves relevant schema information based on a natural language query.',
+        description: 'Retrieves relevant schema rules based on a natural language query. Unlike the getPublicTablesWithColumns tool which returns all tables, this tool returns only the specific rules that are relevant to your query.',
         execute: async ({ query }) => {
           try {
             const infoTimerId = `getRelevantSchemaInfo-${Date.now()}`;
             console.time(infoTimerId);
-            const relevantInfo = await vectorStore.searchSchemaInfo(query, 15)
+            const relevantInfo = await vectorStore.searchSchemaInfo(query, 5)
             
             // Format the results in a more readable way
             const formattedResults = relevantInfo.map(info => ({
               content: info.content,
               type: info.type,
               // Type fix - cast similarity from metadata if it exists
-              similarity: (info as any).similarity,
-              table_name: info.table_name,
-              column_name: info.column_name
+              similarity: (info as any).similarity
             }));
             
             console.timeEnd(infoTimerId);
