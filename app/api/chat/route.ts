@@ -24,6 +24,23 @@ import { SchemaVectorStore, StructuredDocumentation } from '@/utils/vectorStore'
 
 // Define the list of target tables for vector store
 const TARGET_TABLES = [
+  'subject_areas',
+  'testing_centers',
+  'dioceses',
+  'domains',
+  'testing_sections',
+  'ark_admin_dashes',
+  'school_classes',
+  'testing_section_students',
+  'testing_center_dashboards',
+  'tc_grade_levels_snapshot_dcqs',
+  'tc_grade_levels_snapshots',
+  'diocese_student_snapshot_dcqs',
+  'diocese_student_snapshot_grade_levels',
+];
+
+// Define the structured documentation
+const DOCUMENTATION: StructuredDocumentation[] = [
   {
     "id": "chunk_01",
     "title": "Filtering by user role",
@@ -234,7 +251,7 @@ const TARGET_TABLES = [
   {
     "id": "tmpl_02",
     "title": "Template – Eucharist answers by grade",
-    "content": "Question: What is the count and percentage of students in each grade level who selected all possible answers to the question "What is the Eucharist?" (question_id = 651)\nSQL:\nSELECT\n    tss.grade_level,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 4081 THEN ua.user_id END) AS symbol_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 4091 THEN ua.user_id END) AS real_body_blood_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 4101 THEN ua.user_id END) AS staff_symbol_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 4111 THEN ua.user_id END) AS ring_count,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 4081 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS symbol_pct,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 4091 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS real_body_blood_pct,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 4101 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS staff_symbol_pct,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 4111 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS ring_pct\nFROM user_answers ua\nINNER JOIN testing_section_students tss ON tss.id = ua.testing_section_student_id\nINNER JOIN users u ON u.id = ua.user_id\nWHERE\n    ua.question_id = 651\n    AND u.role = 7\nGROUP BY\n    tss.grade_level;",
+    "content": "Question: What is the count and percentage of students in each grade level who selected all possible answers to the question \"What is the Eucharist?\" (question_id = 651)\nSQL:\nSELECT\n    tss.grade_level,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 4081 THEN ua.user_id END) AS symbol_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 4091 THEN ua.user_id END) AS real_body_blood_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 4101 THEN ua.user_id END) AS staff_symbol_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 4111 THEN ua.user_id END) AS ring_count,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 4081 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS symbol_pct,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 4091 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS real_body_blood_pct,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 4101 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS staff_symbol_pct,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 4111 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS ring_pct\nFROM user_answers ua\nINNER JOIN testing_section_students tss ON tss.id = ua.testing_section_student_id\nINNER JOIN users u ON u.id = ua.user_id\nWHERE\n    ua.question_id = 651\n    AND u.role = 7\nGROUP BY\n    tss.grade_level;",
     "metadata": {
       "category": "Report templates",
       "tables": ["user_answers", "testing_section_students", "users"],
@@ -254,7 +271,7 @@ const TARGET_TABLES = [
   {
     "id": "tmpl_04",
     "title": "Template – Real Presence belief by grade",
-    "content": "Question: What is the count and percentage of students in each grade level who selected all possible answers to the question "The Eucharist we receive at Mass is truly the Body and Blood of Jesus Christ?" (question_id = 436)\nSQL:\nSELECT\n    tss.grade_level,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 1538 THEN ua.user_id END) AS believe_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 1540 THEN ua.user_id END) AS not_believe_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 1539 THEN ua.user_id END) AS struggle_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 1542 THEN ua.user_id END) AS not_know_count,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 1538 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS believe,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 1540 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS not_believe,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 1539 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS struggle,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 1542 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS not_know\nFROM user_answers ua\nINNER JOIN testing_section_students tss ON tss.id = ua.testing_section_student_id\nINNER JOIN users u ON u.id = ua.user_id\nWHERE\n    ua.question_id = 436\n    AND u.role = 7\nGROUP BY\n    tss.grade_level;",
+    "content": "Question: What is the count and percentage of students in each grade level who selected all possible answers to the question \"The Eucharist we receive at Mass is truly the Body and Blood of Jesus Christ?\" (question_id = 436)\nSQL:\nSELECT\n    tss.grade_level,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 1538 THEN ua.user_id END) AS believe_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 1540 THEN ua.user_id END) AS not_believe_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 1539 THEN ua.user_id END) AS struggle_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 1542 THEN ua.user_id END) AS not_know_count,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 1538 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS believe,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 1540 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS not_believe,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 1539 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS struggle,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 1542 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS not_know\nFROM user_answers ua\nINNER JOIN testing_section_students tss ON tss.id = ua.testing_section_student_id\nINNER JOIN users u ON u.id = ua.user_id\nWHERE\n    ua.question_id = 436\n    AND u.role = 7\nGROUP BY\n    tss.grade_level;",
     "metadata": {
       "category": "Report templates",
       "tables": ["user_answers", "testing_section_students", "users"],
@@ -733,7 +750,9 @@ export async function POST(req: Request) {
           }
           
           // Check if any table in the query is not in our target tables
-          const targetTablesLower = TARGET_TABLES.map(t => t.toLowerCase());
+          const targetTablesLower = TARGET_TABLES.map(t => 
+            typeof t === 'string' ? t.toLowerCase() : t
+          );
           const nonTargetTables = tablesInQuery.filter(
             table => !targetTablesLower.includes(table)
           );
