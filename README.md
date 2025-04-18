@@ -151,3 +151,77 @@ After rebuilding the vector store, try these example queries:
 5. "How do I get information for the 2023 academic year?"
 
 These should now work effectively with the comprehensive documentation in the vector store.
+
+## Structured Documentation Format
+
+The application now uses a structured JSON format for documentation entries, which significantly improves retrieval relevance. This replaces the previous plaintext format with a more organized approach:
+
+```json
+{
+  "id": "chunk_id",
+  "title": "Concise title describing the content",
+  "content": "The main content of the documentation entry",
+  "metadata": {
+    "category": "Category for grouping related items",
+    "tables": ["table1", "table2"],
+    "columns": ["column1", "column2"],
+    "keywords": ["keyword1", "keyword2"],
+    "question_template": "Optional template for common questions"
+  }
+}
+```
+
+### Benefits of Structured Documentation
+
+1. **Better Semantic Search**: Keywords field helps bridge vocabulary gaps between user queries and documentation
+2. **Improved Context**: Each chunk contains related information without overwhelming with irrelevant details
+3. **Clear Categorization**: Filtering and grouping of related information by type and purpose
+4. **Enhanced Specificity**: Explicit listing of tables and columns makes database relationships clearer
+
+### Documentation Categories
+
+Documentation is organized into these categories:
+- **Table docs**: Database table descriptions and structure
+- **Query‑writing rules**: Guidelines for writing effective SQL
+- **Filtering rules**: Rules for properly filtering data
+- **Hierarchy**: Joins and table relationships for common questions
+- **Reference tables**: ID mappings and reference data
+- **Score rules**: Formulas for calculating scores
+- **Time windows**: Rules for handling time-based queries
+- **Domain scores**: Information about domain-specific scoring
+- **Naming rules**: Conventions for naming and terminology
+- **Report templates**: Ready-to-use SQL queries for common reporting needs, including question and SQL implementation
+
+To modify the structured documentation, edit the array in `app/api/chat/route.ts` or use the sample JSON in `tmp/structured_documentation.json`.
+
+### Loading Structured Documentation
+
+To load the structured documentation format into your vector store:
+
+1. Make sure your structured documentation is saved in `tmp/structured_documentation.json`
+2. Run the loader script:
+   ```
+   node scripts/load_structured_documentation.js
+   ```
+3. Visit the test endpoint to verify the documentation was loaded correctly:
+   ```
+   http://localhost:3000/api/chat?action=test_retrieval&query=your query
+   ```
+
+This script clears the existing vector store and loads the new structured documentation, along with your database schema information.
+
+### Updating Database Schema
+
+Before using the structured documentation format, you need to update your database schema to include the new `title` column:
+
+1. Run the database schema update:
+   ```
+   http://localhost:3000/api/chat?action=update_schema
+   ```
+
+2. After updating the schema, rebuild the vector store with the structured documentation:
+   ```
+   http://localhost:3000/api/chat?action=rebuild_vectors
+   ```
+
+This update adds the `title` column to the `schema_vectors` table and updates the `match_schema_vectors` function to include this column in its results.

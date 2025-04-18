@@ -1,0 +1,279 @@
+[
+  {
+    "id": "chunk_01",
+    "title": "Filtering by user role",
+    "content": "Always filter by user role when querying the tables testing_section_students or user_answers. Teachers have role = 5; Students have role = 7. Tables may contain mixed roles; never assume a single user type without explicit filtering.",
+    "metadata": {
+      "category": "Filtering rules",
+      "tables": ["testing_section_students", "user_answers"],
+      "columns": ["role"],
+      "keywords": ["teacher", "student", "role id"]
+    }
+  },
+  {
+    "id": "chunk_02",
+    "title": "ID-based grouping & joins",
+    "content": "Use IDs—not name strings—for GROUP BY clauses, JOIN conditions, and filtering.",
+    "metadata": {
+      "category": "Query‑writing rules",
+      "keywords": ["group by", "join", "ids", "names"]
+    }
+  },
+  {
+    "id": "chunk_03",
+    "title": "Academic‑year time filters",
+    "content": "When a query refers to \"last year\", use academic_year_id = current_year_id - 1. Do not use current_year = FALSE.",
+    "metadata": {
+      "category": "Time windows",
+      "tables": ["academic_years"],
+      "columns": ["academic_year_id", "current_year"],
+      "keywords": ["last year", "time filter"]
+    }
+  },
+  {
+    "id": "chunk_04",
+    "title": "Academic‑year ID map",
+    "content": "Mapping of academic_years.id to calendar years: 2020 → 1, 2021 → 2, 2022 → 3, 2023 → 4, 2024 → 5.",
+    "metadata": {
+      "category": "Reference tables",
+      "tables": ["academic_years"],
+      "columns": ["id"],
+      "keywords": ["year map"]
+    }
+  },
+  {
+    "id": "chunk_05",
+    "title": "Knowledge‑score formula",
+    "content": "Score formula: (knowledge_score / NULLIF(knowledge_total,0)) * 100. Always cast to float: knowledge_score::float / knowledge_total::float. Filter out NULLs with WHERE knowledge_score IS NOT NULL AND knowledge_total IS NOT NULL.",
+    "metadata": {
+      "category": "Score rules",
+      "tables": ["testing_section_students"],
+      "columns": ["knowledge_score", "knowledge_total"],
+      "keywords": ["score", "NULLIF", "float cast"]
+    }
+  },
+  {
+    "id": "chunk_06",
+    "title": "Diocese naming convention",
+    "content": "Each diocese name starts with either 'Diocese of ___' or 'Archdiocese of ___'. Use that full prefix in filters.",
+    "metadata": {
+      "category": "Naming rules",
+      "tables": ["dioceses"],
+      "columns": ["name"],
+      "keywords": ["diocese", "archdiocese"]
+    }
+  },
+  {
+    "id": "chunk_07",
+    "title": "Hierarchy – average score for subject & grade",
+    "content": "To answer 'What is the average score in [subject] for [grade level]?', join tables in this order: dioceses → testing_centers → testing_sections → testing_section_students.",
+    "metadata": {
+      "category": "Hierarchy",
+      "question_template": "avg score subject grade",
+      "tables": ["dioceses", "testing_centers", "testing_sections", "testing_section_students"],
+      "keywords": ["average score", "grade", "subject"]
+    }
+  },
+  {
+    "id": "chunk_08",
+    "title": "Hierarchy – average score for subject by grade in diocese",
+    "content": "To answer 'What is the average score for [subject] in [diocese] by grade?', use the path: dioceses → testing_centers → testing_sections → testing_section_students.",
+    "metadata": {
+      "category": "Hierarchy",
+      "question_template": "avg score subject diocese grade",
+      "tables": ["dioceses", "testing_centers", "testing_sections", "testing_section_students"],
+      "keywords": ["average score", "grade", "diocese"]
+    }
+  },
+  {
+    "id": "chunk_09",
+    "title": "Hierarchy – average score over time period",
+    "content": "For 'What is the average score in [subject] over the past [time period]?', use the same hierarchy and add academic_year filters.",
+    "metadata": {
+      "category": "Hierarchy",
+      "question_template": "avg score subject time period",
+      "tables": ["dioceses", "testing_centers", "testing_sections", "testing_section_students", "academic_years"],
+      "keywords": ["average score", "time period", "academic years"]
+    }
+  },
+  {
+    "id": "chunk_10",
+    "title": "Hierarchy – subject ID lookup",
+    "content": "To resolve a subject name to its ID, join subject_areas → testing_section_students.",
+    "metadata": {
+      "category": "Hierarchy",
+      "tables": ["subject_areas", "testing_section_students"],
+      "keywords": ["subject id"]
+    }
+  },
+  {
+    "id": "chunk_11",
+    "title": "Subject‑areas reference",
+    "content": "subject_areas.id mapping: Theology = 1, Reading = 2, Math = 3.",
+    "metadata": {
+      "category": "Reference tables",
+      "tables": ["subject_areas"],
+      "columns": ["id", "name"],
+      "keywords": ["subject areas"]
+    }
+  },
+  {
+    "id": "chunk_12",
+    "title": "Domain scores table usage",
+    "content": "Use testing_section_student_domain_scores for domain‑related questions. Key fields: knowledge_score, affinity_score, knowledge_total, affinity_total, domain_id.",
+    "metadata": {
+      "category": "Domain scores",
+      "tables": ["testing_section_student_domain_scores"],
+      "columns": ["domain_id", "knowledge_score", "affinity_score"],
+      "keywords": ["domain", "score"]
+    }
+  },
+  {
+    "id": "chunk_13",
+    "title": "Table – dioceses",
+    "content": "Stores each diocese: id (PK), name, address_line_1, address_line_2, city, state, zipcode, country, deactivate (boolean).",
+    "metadata": {
+      "category": "Table docs",
+      "tables": ["dioceses"],
+      "keywords": ["diocese table"]
+    }
+  },
+  {
+    "id": "chunk_14",
+    "title": "Table – testing_centers",
+    "content": "testing_centers: id (PK), name, address_line_1, address_line_2, city, state, zipcode, country, diocese_id → dioceses(id).",
+    "metadata": {
+      "category": "Table docs",
+      "tables": ["testing_centers"]
+    }
+  },
+  {
+    "id": "chunk_15",
+    "title": "Table – testing_sections",
+    "content": "testing_sections: id (PK), testing_center_id → testing_centers(id), academic_year_id → academic_years(id).",
+    "metadata": {
+      "category": "Table docs",
+      "tables": ["testing_sections"]
+    }
+  },
+  {
+    "id": "chunk_16",
+    "title": "Table – testing_section_students",
+    "content": "testing_section_students: id (PK), user_id, testing_section_id, grade_level, knowledge_score, knowledge_total, subject_area_id, academic_year_id, status, completed_date, progress, scored_status, percentile_rank, pre_test, role, assorted diocese‑specific scores.",
+    "metadata": {
+      "category": "Table docs",
+      "tables": ["testing_section_students"]
+    }
+  },
+  {
+    "id": "chunk_17",
+    "title": "Table – testing_section_student_domain_scores",
+    "content": "testing_section_student_domain_scores: id (PK), testing_section_student_id, domain_id, knowledge_score, knowledge_total, affinity_score, affinity_total.",
+    "metadata": {
+      "category": "Table docs",
+      "tables": ["testing_section_student_domain_scores"]
+    }
+  },
+  {
+    "id": "chunk_18",
+    "title": "Table – users",
+    "content": "users: id (PK), role. Role IDs: Teachers = 5, Students = 7.",
+    "metadata": {
+      "category": "Table docs",
+      "tables": ["users"],
+      "columns": ["id", "role"],
+      "keywords": ["user count", "teacher", "student"]
+    }
+  },
+  {
+    "id": "chunk_19",
+    "title": "Domain ID reference",
+    "content": "Domain names used in testing_section_student_domain_scores: Reading, Mathematics, Virtue, Sacraments & Liturgy, Prayer, Morality, Living Discipleship, Creed & Salvation History.",
+    "metadata": {
+      "category": "Reference tables",
+      "tables": ["domains", "testing_section_student_domain_scores"],
+      "columns": ["domain_id", "name"],
+      "keywords": ["domain names"]
+    }
+  },
+  {
+    "id": "tmpl_01",
+    "title": "Template – average teacher knowledge score per domain",
+    "content": "Question: What is the average teacher's knowledge score for each domain?\nSQL:\nSELECT\n    d.name AS domain_name,\n    AVG(CAST(tsssd.knowledge_score AS FLOAT) / tsssd.knowledge_total) * 100 AS average_domain_performance\nFROM\n    testing_section_students tss\nJOIN\n    testing_section_student_domain_scores tsssd\n        ON tss.id = tsssd.testing_section_student_id\nJOIN\n    domains d\n        ON tsssd.domain_id = d.id\nJOIN\n    users u\n        ON u.id = tss.user_id\nWHERE\n    (u.role = 5 OR (u.role IS NULL AND tss.grade_level IS NOT NULL))\nGROUP BY\n    d.name\nORDER BY\n    average_domain_performance DESC;",
+    "metadata": {
+      "category": "Report templates",
+      "tables": ["testing_section_students", "testing_section_student_domain_scores", "domains", "users"],
+      "keywords": ["average", "knowledge score", "teacher", "domain"]
+    }
+  },
+  {
+    "id": "tmpl_02",
+    "title": "Template – Eucharist answers by grade",
+    "content": "Question: What is the count and percentage of students in each grade level who selected all possible answers to the question "What is the Eucharist?" (question_id = 651)\nSQL:\nSELECT\n    tss.grade_level,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 4081 THEN ua.user_id END) AS symbol_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 4091 THEN ua.user_id END) AS real_body_blood_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 4101 THEN ua.user_id END) AS staff_symbol_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 4111 THEN ua.user_id END) AS ring_count,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 4081 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS symbol_pct,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 4091 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS real_body_blood_pct,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 4101 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS staff_symbol_pct,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 4111 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS ring_pct\nFROM user_answers ua\nINNER JOIN testing_section_students tss ON tss.id = ua.testing_section_student_id\nINNER JOIN users u ON u.id = ua.user_id\nWHERE\n    ua.question_id = 651\n    AND u.role = 7\nGROUP BY\n    tss.grade_level;",
+    "metadata": {
+      "category": "Report templates",
+      "tables": ["user_answers", "testing_section_students", "users"],
+      "keywords": ["Eucharist", "question 651", "grade‑level breakdown"]
+    }
+  },
+  {
+    "id": "tmpl_03",
+    "title": "Template – confess Mortal sins vs knowledge score",
+    "content": "Question: What is the average knowledge score for students who believe that we must confess our Mortal sins and should confess venial sins? (question_id = 432)\nSQL:\nSELECT\n    a.body AS answer_name,\n    AVG((CAST(tss.knowledge_score AS FLOAT) / tss.knowledge_total) * 100) AS average_score\nFROM user_answers ua\nINNER JOIN testing_section_students tss ON tss.id = ua.testing_section_student_id\nINNER JOIN users u ON u.id = ua.user_id\nINNER JOIN answers a ON a.id = ua.answer_id\nWHERE\n    ua.question_id = 432\n    AND ua.answer_id IN (1520, 1522, 1523, 1524)\n    AND u.role = 7\nGROUP BY a.body\nORDER BY average_score DESC;",
+    "metadata": {
+      "category": "Report templates",
+      "tables": ["user_answers", "testing_section_students", "users", "answers"],
+      "keywords": ["confession", "question 432", "average score"]
+    }
+  },
+  {
+    "id": "tmpl_04",
+    "title": "Template – Real Presence belief by grade",
+    "content": "Question: What is the count and percentage of students in each grade level who selected all possible answers to the question "The Eucharist we receive at Mass is truly the Body and Blood of Jesus Christ?" (question_id = 436)\nSQL:\nSELECT\n    tss.grade_level,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 1538 THEN ua.user_id END) AS believe_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 1540 THEN ua.user_id END) AS not_believe_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 1539 THEN ua.user_id END) AS struggle_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 1542 THEN ua.user_id END) AS not_know_count,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 1538 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS believe,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 1540 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS not_believe,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 1539 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS struggle,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 1542 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS not_know\nFROM user_answers ua\nINNER JOIN testing_section_students tss ON tss.id = ua.testing_section_student_id\nINNER JOIN users u ON u.id = ua.user_id\nWHERE\n    ua.question_id = 436\n    AND u.role = 7\nGROUP BY\n    tss.grade_level;",
+    "metadata": {
+      "category": "Report templates",
+      "tables": ["user_answers", "testing_section_students", "users"],
+      "keywords": ["Real Presence", "question 436", "grade distribution"]
+    }
+  },
+  {
+    "id": "tmpl_05",
+    "title": "Template – avg score for students w/ practice & belief (AY 2022‑23)",
+    "content": "Question: What is the average knowledge score for students who attend Mass, have been baptized, and believe in real presence for the academic year 2022‑2023? (academic_year_id = 3)\nSQL:\nSELECT\n    q.body AS question_name,\n    a.body AS answer_name,\n    (CAST(SUM(CASE WHEN tss.academic_year_id = 3 THEN tss.knowledge_score ELSE 0 END) AS FLOAT) / NULLIF(SUM(CASE WHEN tss.academic_year_id = 3 THEN tss.knowledge_total ELSE 0 END), 0)) * 100 AS average_score_academic_year_3\nFROM user_answers ua\nINNER JOIN testing_section_students tss ON tss.id = ua.testing_section_student_id\nINNER JOIN answers a ON a.id = ua.answer_id\nINNER JOIN questions q ON q.id = ua.question_id\nINNER JOIN users u ON u.id = ua.user_id\nWHERE\n    u.role = 7\n    AND (\n        (ua.question_id = 7121 AND ua.answer_id IN (29901, 29911, 29921))\n        OR (ua.question_id = 7111 AND ua.answer_id IN (29891, 29881, 29871, 29861))\n        OR (ua.question_id = 436 AND ua.answer_id IN (1538, 1540, 1539, 1542))\n    )\nGROUP BY q.body, a.body\nORDER BY q.body, a.body;",
+    "metadata": {
+      "category": "Report templates",
+      "tables": ["user_answers", "testing_section_students", "answers", "questions", "users"],
+      "keywords": ["academic_year_id 3", "practice & belief", "average score"]
+    }
+  },
+  {
+    "id": "tmpl_06",
+    "title": "Template – avg student vs teacher knowledge score",
+    "content": "Question: What is the average knowledge score for students and teachers?\nSQL:\nSELECT\n    AVG(CASE WHEN u.role = 5 THEN CAST(tss.knowledge_score AS FLOAT) / tss.knowledge_total END) * 100 AS teacher_avg_score,\n    AVG(CASE WHEN u.role = 7 THEN CAST(tss.knowledge_score AS FLOAT) / tss.knowledge_total END) * 100 AS student_avg_score\nFROM testing_section_students tss\nINNER JOIN users u ON u.id = tss.user_id\nWHERE u.role IN (5, 7);",
+    "metadata": {
+      "category": "Report templates",
+      "tables": ["testing_section_students", "users"],
+      "keywords": ["average", "student", "teacher"]
+    }
+  },
+  {
+    "id": "tmpl_07",
+    "title": "Template – student score vs teacher practice & belief (AY 2022‑23)",
+    "content": "Question: What is the average knowledge score for students with teachers who attend Mass, have been baptized, and believe in real presence for the academic year 2022‑2023? (academic_year_id = 3)\nSQL:\nSELECT\n    ta.question_id AS teacher_question,\n    tq.body AS teacher_question_name,\n    ta.answer_id AS teacher_answer,\n    a.body AS teacher_answer_text,\n    (CAST(SUM(tss.knowledge_score) AS FLOAT) / SUM(tss.knowledge_total)) * 100 AS average_score\nFROM testing_section_students tss\nINNER JOIN users s ON s.id = tss.user_id AND s.role = 7\nINNER JOIN testing_sections ts ON ts.id = tss.testing_section_id\nINNER JOIN users t ON t.id = ts.user_id AND t.role = 5\nINNER JOIN user_answers ta ON ta.user_id = t.id AND ta.question_id IN (7121, 7111, 436)\nINNER JOIN questions tq ON tq.id = ta.question_id\nINNER JOIN answers a ON a.id = ta.answer_id\nWHERE tss.academic_year_id = 3\nGROUP BY ta.question_id, tq.body, ta.answer_id, a.body\nORDER BY ta.question_id, ta.answer_id;",
+    "metadata": {
+      "category": "Report templates",
+      "tables": ["testing_section_students", "users", "testing_sections", "user_answers", "questions", "answers"],
+      "keywords": ["teacher practice", "student score", "academic_year_id 3"]
+    }
+  },
+  {
+    "id": "tmpl_08",
+    "title": "Template – total students & teachers (AY 2023‑24)",
+    "content": "Question: What is the total number of students and teachers for the academic year 2023‑2024? (academic_year_id = 4)\nSQL:\nSELECT\n    COUNT(DISTINCT CASE WHEN u.role = 7 THEN tss.user_id END) AS total_students,\n    COUNT(DISTINCT CASE WHEN u.role = 5 THEN tss.user_id END) AS total_teachers\nFROM testing_section_students tss\nINNER JOIN users u ON u.id = tss.user_id\nWHERE tss.academic_year_id IN (4);",
+    "metadata": {
+      "category": "Report templates",
+      "tables": ["testing_section_students", "users"],
+      "keywords": ["count", "students", "teachers", "academic_year_id 4"]
+    }
+  }
+] 

@@ -20,66 +20,288 @@ import {
 } from './utils'
 import { createClient } from '@/utils/supabase/server'
 import { revalidatePath } from 'next/cache'
-import { SchemaVectorStore } from '@/utils/vectorStore'
+import { SchemaVectorStore, StructuredDocumentation } from '@/utils/vectorStore'
 
 // Define the list of target tables for vector store
 const TARGET_TABLES = [
-  'subject_areas',
-  'testing_centers',
-  'dioceses',
-  'domains',
-  'testing_sections',
-  'ark_admin_dashes',
-  'school_classes',
-  'testing_section_students',
-  'testing_center_dashboards',
-  'tc_grade_levels_snapshot_dcqs',
-  'tc_grade_levels_snapshots',
-  'diocese_student_snapshot_dcqs',
-  'diocese_student_snapshot_grade_levels',
-];
-
-// Define documentation strings
-const DOCUMENTATION = [
-  // Original schema rules renamed as documentation
-  "Always filter by user role when querying testing_section_students or user_answers tables",
-  "Never assume a table contains data for only one user type without explicit filtering",
-  "Tables may contain data for all users, not just the user type indicated in the table name",
-  "When filtering for 'last year', use academic_year_id = current_year_id - 1, not current_year = FALSE",
-  "Teachers have role = 5, Students have role = 7",
-  "Score calculation formula: (knowledge_score / NULLIF(knowledge_total, 0)) * 100",
-  "Always cast to float for score calculations: knowledge_score::float / knowledge_total::float",
-  "Filter out NULL values before calculations: WHERE knowledge_score IS NOT NULL AND knowledge_total IS NOT NULL",
-  "For dioceses, use 'Diocese of [diocese name]' OR 'Archdiocese of [archdiocese name]'",
-  "Use IDs (not names) for GROUP BY clauses, JOIN conditions, and filtering",
-  
-  // New documentation strings
-  "Each diocese name starts with either 'diocese of ___' or archdiocese of ___'",
-  
-  "For the academic_years table, the id column contains values that corresponds the academic years: '2020' = 1, '2021' = 2, '2022' = 3, '2023' = 4, '2024' = 5",
-  
-  "Use this hierarchy of relations to retrieve data for the following question: What is the average score in [subject] for [grade level]? hierarchy: diocese -> testing_center -> testing_sections -> testing_section_students",
-  
-  "Use this hierarchy of relations to retrieve data for the following question: What is the average score for [subject] in [dioceses] by grade? hierarchy: diocese -> testing_center -> testing_sections -> testing_section_students",
-  
-  "Use this hierarchy of relations to retrieve data for the following question: What is the average score in [subject] over the past [time period]? hierarchy: diocese -> testing_center -> testing_sections -> testing_section_students",
-  
-  "Use this hierarchy of relations to access subjects for anserwing subject related queries: subject_area -> testing_section_students",
-  
-  "Use the users table for any user related queries like total number of students or teachers. The role id for the students = 7 while the role id for teacher = 5",
-  
-  "The 'dioceses' table stores detailed information about each diocese within the organization. Each diocese is uniquely identified by 'id' and includes attributes such as name, address details, and various operational settings. Key attributes include: - **id**: Unique identifier for the diocese (Primary Key). - **name**: Name of the diocese. - **address_line_1 & address_line_2**: Address components for the diocese's location. - **city, state, zipcode, country**: Geographical information for the diocese's location. - **deactivate**: Boolean flag to deactivate the diocese.",
-  
-  "The 'testing_centers' table contains information about each testing center (school) affiliated with the organization. Each center is uniquely identified by 'id' and is associated with a specific diocese. Key attributes include: - **id**: Unique identifier for the testing center (Primary Key). - **name**: Name of the testing center (school). - **address_line_1 & address_line_2**: Address components for the testing center's (school) location. - **city, state, zipcode, country**: Geographical information for the testing center's (school) location. - **diocese_id**: References the diocese overseeing the center (Foreign Key to 'dioceses(id) table').",
-  
-  "The 'testing_sections' table details the various testing sections within each testing center. Each testing section is uniquely identified by 'id' and is linked to a testing center. Key attributes include: - **id**: Unique identifier for the testing section (Primary Key). - **testing_center_id**: References the testing center where the section is located (Foreign Key to 'public_testing_centers(id) table'). - **academic_year_id**: References the academic year id associated with the testing section (this is just the id, and not the year) (Foreign Key to 'academic_years'(id) table).",
-  
-  "The 'subject_areas' table enumerates the different subject areas available for testing. Each subject area is uniquely identified by 'id' and includes attributes such as name and timestamps. Key attributes include: - **id**: Unique identifier for the subject area ('Theology'=1, 'Reading'=2, 'Math'=3) ( (Primary Key). - **name**: Name of the subject area.",
-  
-  "The 'testing_section_students' table records information about students participating in specific testing sections and subject areas. Each record is uniquely identified by 'id' and includes various performance metrics and associations. Key attributes include: - **id**: Unique identifier for the student record (Primary Key). - **user_id**: References the user associated with the student (Foreign Key to 'users'(id) table). - **testing_section_id**: References the testing section the student is enrolled in (Foreign Key to 'testing_sections(id) table'). - **status**: Current status of the student in the testing process. - **completed_date**: Date when the student completed the testing. - **grade_level**: Grade level of the student. - **progress**: Progress metric indicating how much of the testing the student has completed. - **scored_status**: Boolean indicating if the student has been scored. - **knowledge_score** Scores reflecting how many questions the student got correct. - **affinity_score**: Scores reflecting the student's affinity. - **assessment_id**: References the specific assessment taken by the student. - **knowledge_total**: Total possible questions in assessment. - **affinity_total**: Total possible scores affinity. - **percentile_rank**: The student's percentile rank in the assessment. - **academic_year_id**: References the academic year id associated with the testing (this is just the id, and not the year) (Foreign Key to 'academic_years'(id) table). - **pre_test**: Boolean indicating if this was a pre-test. - **role**: Role of the student (e.g., participant, observer). - **diocese_specific_knowledge_score**: Scores specific to the diocese's metrics. - **diocese_specific_affinity_score**: Scores specific to the diocese's metrics. - **diocese_specific_knowledge_total**: Total possible scores for diocese-specific metrics. - **diocese_specific_affinity_total**: Total possible scores for diocese-specific metrics. - **subject_area_id**: References the subject area the student is tested in (Foreign Key to 'subject_areas(id) table'). - **assessment_window_id**: References the assessment window (Foreign Key to 'assessment_windows'(id) table).",
-  
-  "The 'testing_section_student_domain_scores' table records information about students participating in specific testing sections and domain areas. Domains include: \"Reading\", \"Mathematics\", \"Virtue\", \"Sacraments & Liturgy\", \"Prayer\", \"Morality\", \"Living Discipleship\", \"Creed & Salvation History\" All domain related questions will be quiered using the 'testing_section_student_domain_scores' table: - **id**: Unique identifier for the student record (Primary Key). - **testing_section_student_id**: References the testing section the student is enrolled in (Foreign Key to 'testing_sections(id) table'). - **knowledge_score** Domain scores reflecting how many questions the student got correct in a particular domain - **affinity_score**: Domain scores reflecting the student's affinity in a particular domain - **assessment_id**: References the specific assessment taken by the student. - **domain_id**: References the domain the student is tested in (Foreign Key to 'domains(id) table'). - **knowledge_total**: Total possible questions in assessment. - **affinity_total**: Total possible scores affinity."
-];
+  {
+    "id": "chunk_01",
+    "title": "Filtering by user role",
+    "content": "Always filter by user role when querying the tables testing_section_students or user_answers. Teachers have role = 5; Students have role = 7. Tables may contain mixed roles; never assume a single user type without explicit filtering.",
+    "metadata": {
+      "category": "Filtering rules",
+      "tables": ["testing_section_students", "user_answers"],
+      "columns": ["role"],
+      "keywords": ["teacher", "student", "role id"]
+    }
+  },
+  {
+    "id": "chunk_02",
+    "title": "ID-based grouping & joins",
+    "content": "Use IDs—not name strings—for GROUP BY clauses, JOIN conditions, and filtering.",
+    "metadata": {
+      "category": "Query‑writing rules",
+      "keywords": ["group by", "join", "ids", "names"]
+    }
+  },
+  {
+    "id": "chunk_03",
+    "title": "Academic‑year time filters",
+    "content": "When a query refers to \"last year\", use academic_year_id = current_year_id - 1. Do not use current_year = FALSE.",
+    "metadata": {
+      "category": "Time windows",
+      "tables": ["academic_years"],
+      "columns": ["academic_year_id", "current_year"],
+      "keywords": ["last year", "time filter"]
+    }
+  },
+  {
+    "id": "chunk_04",
+    "title": "Academic‑year ID map",
+    "content": "Mapping of academic_years.id to calendar years: 2020 → 1, 2021 → 2, 2022 → 3, 2023 → 4, 2024 → 5.",
+    "metadata": {
+      "category": "Reference tables",
+      "tables": ["academic_years"],
+      "columns": ["id"],
+      "keywords": ["year map"]
+    }
+  },
+  {
+    "id": "chunk_05",
+    "title": "Knowledge‑score formula",
+    "content": "Score formula: (knowledge_score / NULLIF(knowledge_total,0)) * 100. Always cast to float: knowledge_score::float / knowledge_total::float. Filter out NULLs with WHERE knowledge_score IS NOT NULL AND knowledge_total IS NOT NULL.",
+    "metadata": {
+      "category": "Score rules",
+      "tables": ["testing_section_students"],
+      "columns": ["knowledge_score", "knowledge_total"],
+      "keywords": ["score", "NULLIF", "float cast"]
+    }
+  },
+  {
+    "id": "chunk_06",
+    "title": "Diocese naming convention",
+    "content": "Each diocese name starts with either 'Diocese of ___' or 'Archdiocese of ___'. Use that full prefix in filters.",
+    "metadata": {
+      "category": "Naming rules",
+      "tables": ["dioceses"],
+      "columns": ["name"],
+      "keywords": ["diocese", "archdiocese"]
+    }
+  },
+  {
+    "id": "chunk_07",
+    "title": "Hierarchy – average score for subject & grade",
+    "content": "To answer 'What is the average score in [subject] for [grade level]?', join tables in this order: dioceses → testing_centers → testing_sections → testing_section_students.",
+    "metadata": {
+      "category": "Hierarchy",
+      "question_template": "avg score subject grade",
+      "tables": ["dioceses", "testing_centers", "testing_sections", "testing_section_students"],
+      "keywords": ["average score", "grade", "subject"]
+    }
+  },
+  {
+    "id": "chunk_08",
+    "title": "Hierarchy – average score for subject by grade in diocese",
+    "content": "To answer 'What is the average score for [subject] in [diocese] by grade?', use the path: dioceses → testing_centers → testing_sections → testing_section_students.",
+    "metadata": {
+      "category": "Hierarchy",
+      "question_template": "avg score subject diocese grade",
+      "tables": ["dioceses", "testing_centers", "testing_sections", "testing_section_students"],
+      "keywords": ["average score", "grade", "diocese"]
+    }
+  },
+  {
+    "id": "chunk_09",
+    "title": "Hierarchy – average score over time period",
+    "content": "For 'What is the average score in [subject] over the past [time period]?', use the same hierarchy and add academic_year filters.",
+    "metadata": {
+      "category": "Hierarchy",
+      "question_template": "avg score subject time period",
+      "tables": ["dioceses", "testing_centers", "testing_sections", "testing_section_students", "academic_years"],
+      "keywords": ["average score", "time period", "academic years"]
+    }
+  },
+  {
+    "id": "chunk_10",
+    "title": "Hierarchy – subject ID lookup",
+    "content": "To resolve a subject name to its ID, join subject_areas → testing_section_students.",
+    "metadata": {
+      "category": "Hierarchy",
+      "tables": ["subject_areas", "testing_section_students"],
+      "keywords": ["subject id"]
+    }
+  },
+  {
+    "id": "chunk_11",
+    "title": "Subject‑areas reference",
+    "content": "subject_areas.id mapping: Theology = 1, Reading = 2, Math = 3.",
+    "metadata": {
+      "category": "Reference tables",
+      "tables": ["subject_areas"],
+      "columns": ["id", "name"],
+      "keywords": ["subject areas"]
+    }
+  },
+  {
+    "id": "chunk_12",
+    "title": "Domain scores table usage",
+    "content": "Use testing_section_student_domain_scores for domain‑related questions. Key fields: knowledge_score, affinity_score, knowledge_total, affinity_total, domain_id.",
+    "metadata": {
+      "category": "Domain scores",
+      "tables": ["testing_section_student_domain_scores"],
+      "columns": ["domain_id", "knowledge_score", "affinity_score"],
+      "keywords": ["domain", "score"]
+    }
+  },
+  {
+    "id": "chunk_13",
+    "title": "Table – dioceses",
+    "content": "Stores each diocese: id (PK), name, address_line_1, address_line_2, city, state, zipcode, country, deactivate (boolean).",
+    "metadata": {
+      "category": "Table docs",
+      "tables": ["dioceses"],
+      "keywords": ["diocese table"]
+    }
+  },
+  {
+    "id": "chunk_14",
+    "title": "Table – testing_centers",
+    "content": "testing_centers: id (PK), name, address_line_1, address_line_2, city, state, zipcode, country, diocese_id → dioceses(id).",
+    "metadata": {
+      "category": "Table docs",
+      "tables": ["testing_centers"]
+    }
+  },
+  {
+    "id": "chunk_15",
+    "title": "Table – testing_sections",
+    "content": "testing_sections: id (PK), testing_center_id → testing_centers(id), academic_year_id → academic_years(id).",
+    "metadata": {
+      "category": "Table docs",
+      "tables": ["testing_sections"]
+    }
+  },
+  {
+    "id": "chunk_16",
+    "title": "Table – testing_section_students",
+    "content": "testing_section_students: id (PK), user_id, testing_section_id, grade_level, knowledge_score, knowledge_total, subject_area_id, academic_year_id, status, completed_date, progress, scored_status, percentile_rank, pre_test, role, assorted diocese‑specific scores.",
+    "metadata": {
+      "category": "Table docs",
+      "tables": ["testing_section_students"]
+    }
+  },
+  {
+    "id": "chunk_17",
+    "title": "Table – testing_section_student_domain_scores",
+    "content": "testing_section_student_domain_scores: id (PK), testing_section_student_id, domain_id, knowledge_score, knowledge_total, affinity_score, affinity_total.",
+    "metadata": {
+      "category": "Table docs",
+      "tables": ["testing_section_student_domain_scores"]
+    }
+  },
+  {
+    "id": "chunk_18",
+    "title": "Table – users",
+    "content": "users: id (PK), role. Role IDs: Teachers = 5, Students = 7.",
+    "metadata": {
+      "category": "Table docs",
+      "tables": ["users"],
+      "columns": ["id", "role"],
+      "keywords": ["user count", "teacher", "student"]
+    }
+  },
+  {
+    "id": "chunk_19",
+    "title": "Domain ID reference",
+    "content": "Domain names used in testing_section_student_domain_scores: Reading, Mathematics, Virtue, Sacraments & Liturgy, Prayer, Morality, Living Discipleship, Creed & Salvation History.",
+    "metadata": {
+      "category": "Reference tables",
+      "tables": ["domains", "testing_section_student_domain_scores"],
+      "columns": ["domain_id", "name"],
+      "keywords": ["domain names"]
+    }
+  },
+  {
+    "id": "tmpl_01",
+    "title": "Template – average teacher knowledge score per domain",
+    "content": "Question: What is the average teacher's knowledge score for each domain?\nSQL:\nSELECT\n    d.name AS domain_name,\n    AVG(CAST(tsssd.knowledge_score AS FLOAT) / tsssd.knowledge_total) * 100 AS average_domain_performance\nFROM\n    testing_section_students tss\nJOIN\n    testing_section_student_domain_scores tsssd\n        ON tss.id = tsssd.testing_section_student_id\nJOIN\n    domains d\n        ON tsssd.domain_id = d.id\nJOIN\n    users u\n        ON u.id = tss.user_id\nWHERE\n    (u.role = 5 OR (u.role IS NULL AND tss.grade_level IS NOT NULL))\nGROUP BY\n    d.name\nORDER BY\n    average_domain_performance DESC;",
+    "metadata": {
+      "category": "Report templates",
+      "tables": ["testing_section_students", "testing_section_student_domain_scores", "domains", "users"],
+      "keywords": ["average", "knowledge score", "teacher", "domain"]
+    }
+  },
+  {
+    "id": "tmpl_02",
+    "title": "Template – Eucharist answers by grade",
+    "content": "Question: What is the count and percentage of students in each grade level who selected all possible answers to the question "What is the Eucharist?" (question_id = 651)\nSQL:\nSELECT\n    tss.grade_level,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 4081 THEN ua.user_id END) AS symbol_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 4091 THEN ua.user_id END) AS real_body_blood_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 4101 THEN ua.user_id END) AS staff_symbol_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 4111 THEN ua.user_id END) AS ring_count,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 4081 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS symbol_pct,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 4091 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS real_body_blood_pct,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 4101 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS staff_symbol_pct,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 4111 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS ring_pct\nFROM user_answers ua\nINNER JOIN testing_section_students tss ON tss.id = ua.testing_section_student_id\nINNER JOIN users u ON u.id = ua.user_id\nWHERE\n    ua.question_id = 651\n    AND u.role = 7\nGROUP BY\n    tss.grade_level;",
+    "metadata": {
+      "category": "Report templates",
+      "tables": ["user_answers", "testing_section_students", "users"],
+      "keywords": ["Eucharist", "question 651", "grade‑level breakdown"]
+    }
+  },
+  {
+    "id": "tmpl_03",
+    "title": "Template – confess Mortal sins vs knowledge score",
+    "content": "Question: What is the average knowledge score for students who believe that we must confess our Mortal sins and should confess venial sins? (question_id = 432)\nSQL:\nSELECT\n    a.body AS answer_name,\n    AVG((CAST(tss.knowledge_score AS FLOAT) / tss.knowledge_total) * 100) AS average_score\nFROM user_answers ua\nINNER JOIN testing_section_students tss ON tss.id = ua.testing_section_student_id\nINNER JOIN users u ON u.id = ua.user_id\nINNER JOIN answers a ON a.id = ua.answer_id\nWHERE\n    ua.question_id = 432\n    AND ua.answer_id IN (1520, 1522, 1523, 1524)\n    AND u.role = 7\nGROUP BY a.body\nORDER BY average_score DESC;",
+    "metadata": {
+      "category": "Report templates",
+      "tables": ["user_answers", "testing_section_students", "users", "answers"],
+      "keywords": ["confession", "question 432", "average score"]
+    }
+  },
+  {
+    "id": "tmpl_04",
+    "title": "Template – Real Presence belief by grade",
+    "content": "Question: What is the count and percentage of students in each grade level who selected all possible answers to the question "The Eucharist we receive at Mass is truly the Body and Blood of Jesus Christ?" (question_id = 436)\nSQL:\nSELECT\n    tss.grade_level,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 1538 THEN ua.user_id END) AS believe_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 1540 THEN ua.user_id END) AS not_believe_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 1539 THEN ua.user_id END) AS struggle_count,\n    COUNT(DISTINCT CASE WHEN ua.answer_id = 1542 THEN ua.user_id END) AS not_know_count,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 1538 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS believe,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 1540 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS not_believe,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 1539 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS struggle,\n    (COUNT(DISTINCT CASE WHEN ua.answer_id = 1542 THEN ua.user_id END) * 100.0) / NULLIF(COUNT(DISTINCT ua.user_id), 0) AS not_know\nFROM user_answers ua\nINNER JOIN testing_section_students tss ON tss.id = ua.testing_section_student_id\nINNER JOIN users u ON u.id = ua.user_id\nWHERE\n    ua.question_id = 436\n    AND u.role = 7\nGROUP BY\n    tss.grade_level;",
+    "metadata": {
+      "category": "Report templates",
+      "tables": ["user_answers", "testing_section_students", "users"],
+      "keywords": ["Real Presence", "question 436", "grade distribution"]
+    }
+  },
+  {
+    "id": "tmpl_05",
+    "title": "Template – avg score for students w/ practice & belief (AY 2022‑23)",
+    "content": "Question: What is the average knowledge score for students who attend Mass, have been baptized, and believe in real presence for the academic year 2022‑2023? (academic_year_id = 3)\nSQL:\nSELECT\n    q.body AS question_name,\n    a.body AS answer_name,\n    (CAST(SUM(CASE WHEN tss.academic_year_id = 3 THEN tss.knowledge_score ELSE 0 END) AS FLOAT) / NULLIF(SUM(CASE WHEN tss.academic_year_id = 3 THEN tss.knowledge_total ELSE 0 END), 0)) * 100 AS average_score_academic_year_3\nFROM user_answers ua\nINNER JOIN testing_section_students tss ON tss.id = ua.testing_section_student_id\nINNER JOIN answers a ON a.id = ua.answer_id\nINNER JOIN questions q ON q.id = ua.question_id\nINNER JOIN users u ON u.id = ua.user_id\nWHERE\n    u.role = 7\n    AND (\n        (ua.question_id = 7121 AND ua.answer_id IN (29901, 29911, 29921))\n        OR (ua.question_id = 7111 AND ua.answer_id IN (29891, 29881, 29871, 29861))\n        OR (ua.question_id = 436 AND ua.answer_id IN (1538, 1540, 1539, 1542))\n    )\nGROUP BY q.body, a.body\nORDER BY q.body, a.body;",
+    "metadata": {
+      "category": "Report templates",
+      "tables": ["user_answers", "testing_section_students", "answers", "questions", "users"],
+      "keywords": ["academic_year_id 3", "practice & belief", "average score"]
+    }
+  },
+  {
+    "id": "tmpl_06",
+    "title": "Template – avg student vs teacher knowledge score",
+    "content": "Question: What is the average knowledge score for students and teachers?\nSQL:\nSELECT\n    AVG(CASE WHEN u.role = 5 THEN CAST(tss.knowledge_score AS FLOAT) / tss.knowledge_total END) * 100 AS teacher_avg_score,\n    AVG(CASE WHEN u.role = 7 THEN CAST(tss.knowledge_score AS FLOAT) / tss.knowledge_total END) * 100 AS student_avg_score\nFROM testing_section_students tss\nINNER JOIN users u ON u.id = tss.user_id\nWHERE u.role IN (5, 7);",
+    "metadata": {
+      "category": "Report templates",
+      "tables": ["testing_section_students", "users"],
+      "keywords": ["average", "student", "teacher"]
+    }
+  },
+  {
+    "id": "tmpl_07",
+    "title": "Template – student score vs teacher practice & belief (AY 2022‑23)",
+    "content": "Question: What is the average knowledge score for students with teachers who attend Mass, have been baptized, and believe in real presence for the academic year 2022‑2023? (academic_year_id = 3)\nSQL:\nSELECT\n    ta.question_id AS teacher_question,\n    tq.body AS teacher_question_name,\n    ta.answer_id AS teacher_answer,\n    a.body AS teacher_answer_text,\n    (CAST(SUM(tss.knowledge_score) AS FLOAT) / SUM(tss.knowledge_total)) * 100 AS average_score\nFROM testing_section_students tss\nINNER JOIN users s ON s.id = tss.user_id AND s.role = 7\nINNER JOIN testing_sections ts ON ts.id = tss.testing_section_id\nINNER JOIN users t ON t.id = ts.user_id AND t.role = 5\nINNER JOIN user_answers ta ON ta.user_id = t.id AND ta.question_id IN (7121, 7111, 436)\nINNER JOIN questions tq ON tq.id = ta.question_id\nINNER JOIN answers a ON a.id = ta.answer_id\nWHERE tss.academic_year_id = 3\nGROUP BY ta.question_id, tq.body, ta.answer_id, a.body\nORDER BY ta.question_id, ta.answer_id;",
+    "metadata": {
+      "category": "Report templates",
+      "tables": ["testing_section_students", "users", "testing_sections", "user_answers", "questions", "answers"],
+      "keywords": ["teacher practice", "student score", "academic_year_id 3"]
+    }
+  },
+  {
+    "id": "tmpl_08",
+    "title": "Template – total students & teachers (AY 2023‑24)",
+    "content": "Question: What is the total number of students and teachers for the academic year 2023‑2024? (academic_year_id = 4)\nSQL:\nSELECT\n    COUNT(DISTINCT CASE WHEN u.role = 7 THEN tss.user_id END) AS total_students,\n    COUNT(DISTINCT CASE WHEN u.role = 5 THEN tss.user_id END) AS total_teachers\nFROM testing_section_students tss\nINNER JOIN users u ON u.id = tss.user_id\nWHERE tss.academic_year_id IN (4);",
+    "metadata": {
+      "category": "Report templates",
+      "tables": ["testing_section_students", "users"],
+      "keywords": ["count", "students", "teachers", "academic_year_id 4"]
+    }
+  }
+] ;
 
 // Create a singleton vector store
 let vectorStoreInstance: SchemaVectorStore | null = null;
@@ -113,7 +335,79 @@ export async function GET(req: Request) {
   const searchParams = new URL(req.url).searchParams;
   const action = searchParams.get('action');
   
-  if (action === 'rebuild_vectors') {
+  if (action === 'update_schema') {
+    try {
+      // Get the database connection string
+      const connectionString = process.env.POSTGRES_URL;
+      if (!connectionString) {
+        return new Response('Missing database connection string', { status: 500 });
+      }
+      
+      // Create Postgres client
+      const { Pool } = require('pg');
+      const pool = new Pool({ connectionString });
+      
+      console.log('Updating schema_vectors table to add title column...');
+      
+      // Add title column to schema_vectors table if it doesn't exist
+      await pool.query(`
+        ALTER TABLE public.schema_vectors 
+        ADD COLUMN IF NOT EXISTS title TEXT;
+      `);
+      
+      // Update the match_schema_vectors function to return the title column
+      await pool.query(`
+        CREATE OR REPLACE FUNCTION match_schema_vectors(
+          query_embedding VECTOR(1536),
+          match_threshold FLOAT,
+          match_count INT
+        )
+        RETURNS TABLE (
+          id TEXT,
+          content TEXT,
+          type TEXT,
+          similarity FLOAT,
+          table_name TEXT,
+          column_name TEXT,
+          metadata JSONB,
+          title TEXT
+        )
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+          RETURN QUERY
+          SELECT
+            sv.id,
+            sv.content,
+            sv.type,
+            1 - (sv.embedding <=> query_embedding) as similarity,
+            sv.table_name,
+            sv.column_name,
+            sv.metadata,
+            sv.title
+          FROM
+            schema_vectors sv
+          WHERE
+            1 - (sv.embedding <=> query_embedding) > match_threshold
+          ORDER BY
+            sv.embedding <=> query_embedding
+          LIMIT match_count;
+        END;
+        $$;
+      `);
+      
+      await pool.end();
+      
+      return new Response('Schema updated successfully. Title column added to schema_vectors table.', { 
+        status: 200 
+      });
+    } catch (error) {
+      console.error('Error updating schema:', error);
+      return new Response(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`, { 
+        status: 500 
+      });
+    }
+  } else if (action === 'rebuild_vectors') {
     try {
       // Get the vector store
       const projectOpenaiApiKey = process.env.OPENAI_API_KEY;
@@ -192,6 +486,7 @@ export async function GET(req: Request) {
   
   return new Response(`
     Available actions:
+    - ?action=update_schema - Update the schema_vectors table to add the title column
     - ?action=rebuild_vectors - Clear and rebuild the vector store
     - ?action=test_retrieval&query=your query here - Test documentation retrieval with a specific query
   `, { 
@@ -298,8 +593,8 @@ export async function POST(req: Request) {
      The tools available to you serve the following purposes:
      - getPublicTablesWithColumns: Returns ALL tables and their structure available for querying
      - getRelevantDocumentation: Returns documentation relevant to the specific query, including schema guidance, table usage details, and query patterns
-     
-     When generating queries:
+
+      When generating queries:
      1. First call getPublicTablesWithColumns to see all available tables
      2. Then call getRelevantDocumentation to get documentation relevant to your specific query
      3. Only use tables from the returned list - never reference tables not in this list
@@ -396,33 +691,32 @@ export async function POST(req: Request) {
       }),
 
       getRelevantDocumentation: tool({
-        description: 'Retrieves relevant documentation based on a natural language query. Unlike the getPublicTablesWithColumns tool which returns all tables, this tool returns documentation specific to your query, including schema guidance, table descriptions, and query patterns.',
+        description: `Find relevant structured documentation for answering queries about database schema, query patterns, and database rules. This will retrieve semantically similar documentation based on your natural language query. Documentation entries include table descriptions, query patterns, business rules, and other helpful context. Each entry has a title, content, and metadata with categories and keywords.`,
+        parameters: z.object({
+          query: z.string().describe('The natural language query to find relevant documentation'),
+        }),
         execute: async ({ query }) => {
           try {
             const infoTimerId = `getRelevantDocumentation-${Date.now()}`;
             console.time(infoTimerId);
-            // Using higher limit (20) to ensure we get all relevant documentation
-            const relevantInfo = await vectorStore.searchSchemaInfo(query, 20)
             
-            // Format the results in a more readable way
-            const formattedResults = relevantInfo.map(info => ({
-              content: info.content,
-              type: info.type,
-              // Type fix - cast similarity from metadata if it exists
-              similarity: (info as any).similarity
-            }));
+            // Search for relevant information
+            const relevantInfo = await vectorStore.searchSchemaInfo(query, 20);
             
-            console.log(`Retrieved ${formattedResults.length} documentation entries with threshold set to 0.29`);
+            // Format the results
+            console.log(`Found ${relevantInfo.length} relevant documentation entries (threshold: 0.29)`);
+            
+            if (relevantInfo.length === 0) {
+              return 'No relevant documentation found for this query. Please try a different query or ask about specific tables or columns.';
+            }
+            
             console.timeEnd(infoTimerId);
-            return formattedResults
+            return relevantInfo.map((info: any) => info.content).join('\n\n');
           } catch (error) {
-            console.error('Error retrieving documentation:', error)
-            throw new Error(`Failed to retrieve documentation: ${error instanceof Error ? error.message : 'Unknown error'}`)
+            console.error('Error retrieving documentation:', error);
+            return `Error retrieving documentation: ${error instanceof Error ? error.message : 'Unknown error'}`;
           }
         },
-        parameters: z.object({
-          query: z.string().describe('Natural language description of the documentation needed'),
-        }),
       }),
 
       getExplainForQuery: tool({

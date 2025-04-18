@@ -37,6 +37,21 @@ export interface SchemaVectorEntry {
   table_name?: string;
   column_name?: string;
   metadata?: Record<string, any>;
+  title?: string;
+}
+
+// For the structured documentation format
+export interface StructuredDocumentation {
+  id: string;
+  title: string;
+  content: string;
+  metadata: {
+    category: string;
+    tables?: string[];
+    columns?: string[];
+    keywords?: string[];
+    question_template?: string;
+  };
 }
 
 // Vector Store class
@@ -79,7 +94,11 @@ export class SchemaVectorStore {
   }
 
   // Store schema information in the vector store
-  async storeSchemaInfo(tables: TableInfo[], constraints: ForeignKeyConstraint[], documentation: string[]) {
+  async storeSchemaInfo(
+    tables: TableInfo[], 
+    constraints: ForeignKeyConstraint[], 
+    documentation: string[] | StructuredDocumentation[]
+  ) {
     const storeTimerId = `storeSchemaInfo-${Date.now()}`;
     console.time(storeTimerId);
     
@@ -90,23 +109,70 @@ export class SchemaVectorStore {
       type: 'documentation';
       content: string;
       metadata?: Record<string, any>;
+      title?: string;
     }[] = [];
     
-    console.log(`Processing ${documentation.length} documentation entries for vector storage`);
+    // Check if documentation is in the new structured format or old string format
+    const isStructuredFormat = documentation.length > 0 && 
+      typeof documentation[0] !== 'string' && 
+      'id' in documentation[0] && 
+      'title' in documentation[0];
     
-    // Process documentation entries - we don't store tables and columns in the vector store anymore
-    for (let i = 0; i < documentation.length; i++) {
-      // Add context categorization to documentation
-      const enhancedDocumentation = this.enhanceDocumentationWithContext(documentation[i], i);
-      const docContent = `Documentation: ${enhancedDocumentation}`;
+    console.log(`Processing ${documentation.length} documentation entries for vector storage`);
+    console.log(`Documentation format: ${isStructuredFormat ? 'Structured JSON' : 'Simple string'}`);
+    
+    if (isStructuredFormat) {
+      // Process structured documentation
+      const structuredDocs = documentation as StructuredDocumentation[];
       
-      allContents.push(docContent);
-      contentMappings.push({
-        id: `documentation_${i}`,
-        content: docContent,
-        type: 'documentation',
-        metadata: { doc_index: i }
-      });
+      for (const doc of structuredDocs) {
+        // Create a searchable text that combines title, content and keywords
+        const keywordsText = doc.metadata.keywords ? 
+          `Keywords: ${doc.metadata.keywords.join(', ')}` : '';
+        const tablesText = doc.metadata.tables ? 
+          `Tables: ${doc.metadata.tables.join(', ')}` : '';
+        const columnsText = doc.metadata.columns ? 
+          `Columns: ${doc.metadata.columns.join(', ')}` : '';
+        
+        // Combine all text for embedding
+        const docContent = [
+          `Title: ${doc.title}`,
+          `Category: ${doc.metadata.category}`,
+          `Content: ${doc.content}`,
+          keywordsText,
+          tablesText,
+          columnsText
+        ].filter(Boolean).join('\n');
+        
+        allContents.push(docContent);
+        contentMappings.push({
+          id: doc.id,
+          content: docContent,
+          type: 'documentation',
+          title: doc.title,
+          metadata: {
+            ...doc.metadata,
+            raw_content: doc.content
+          }
+        });
+      }
+    } else {
+      // Process legacy string documentation
+      const stringDocs = documentation as string[];
+      
+      for (let i = 0; i < stringDocs.length; i++) {
+        // Add context categorization to documentation
+        const enhancedDocumentation = this.enhanceDocumentationWithContext(stringDocs[i], i);
+        const docContent = `Documentation: ${enhancedDocumentation}`;
+        
+        allContents.push(docContent);
+        contentMappings.push({
+          id: `documentation_${i}`,
+          content: docContent,
+          type: 'documentation',
+          metadata: { doc_index: i }
+        });
+      }
     }
 
     console.log(`Generating embeddings for ${allContents.length} documentation entries in a single batch call`);
@@ -126,7 +192,8 @@ export class SchemaVectorStore {
       embedding: allEmbeddings[index],
       table_name: undefined,
       column_name: undefined,
-      metadata: mapping.metadata
+      metadata: mapping.metadata,
+      title: mapping.title
     }));
 
     // Insert all vector entries in batches
@@ -233,21 +300,49 @@ export class SchemaVectorStore {
       throw new Error(`Failed to search vectors: ${error.message}`);
     }
     
-    // Store in cache
-    this.queryCache.set(cacheKey, { timestamp: now, results: data });
+    // Format results for better readability
+    const formattedResults = data.map((item: any) => {
+      // Check if this is a structured documentation item
+      const isStructured = item.title && item.metadata && 
+        (item.metadata.category || item.metadata.raw_content);
+      
+      if (isStructured) {
+        // Format structured documentation
+        const rawContent = item.metadata.raw_content || '';
+        const category = item.metadata.category || '';
+        const tables = item.metadata.tables ? item.metadata.tables.join(', ') : '';
+        const keywords = item.metadata.keywords ? item.metadata.keywords.join(', ') : '';
+        
+        // Create a nicely formatted content string
+        item.content = `[${category}] ${item.title}\n${rawContent}`;
+        
+        // Add tables and keywords info if available
+        if (tables) item.content += `\nTables: ${tables}`;
+        if (keywords) item.content += `\nKeywords: ${keywords}`;
+        
+        // Add similarity score
+        item.content += `\nRelevance: ${(item.similarity * 100).toFixed(1)}%`;
+      }
+      
+      return item;
+    });
     
-    console.log(`Found ${data.length} relevant documentation items with threshold 0.29`);
+    // Store in cache
+    this.queryCache.set(cacheKey, { timestamp: now, results: formattedResults });
+    
+    console.log(`Found ${formattedResults.length} relevant documentation items with threshold 0.29`);
     // Add detailed logging to show similarity scores
-    if (data && data.length > 0) {
+    if (formattedResults && formattedResults.length > 0) {
       console.log('Similarity scores:');
-      data.forEach((item: any, index: number) => {
-        console.log(`  ${index + 1}. ${item.content.substring(0, 50)}... | Score: ${item.similarity.toFixed(4)}`);
+      formattedResults.forEach((item: any, index: number) => {
+        const title = item.title || 'Untitled';
+        console.log(`  ${index + 1}. ${title} | Score: ${item.similarity.toFixed(4)}`);
       });
     }
     
     console.timeEnd(searchTimerId);
     
-    return data;
+    return formattedResults;
   }
 }
 
