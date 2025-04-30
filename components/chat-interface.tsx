@@ -2,6 +2,7 @@
 
 import { useAppLocalStorage } from '@/hooks/use-app-local-storage'
 import Chat from './chat'
+import ChatInterfaceModern from './chat-interface-modern'
 import ConnectionForm from './connection-form'
 
 import { useEffect, useMemo } from 'react'
@@ -25,7 +26,7 @@ export default function ChatInterface({
   user: User
 }) {
   const { value, setValue } = useAppLocalStorage()
-  const { setChat, chat: chatState } = useAppState()
+  const { setChat, chat: chatState, clearChat } = useAppState()
 
   const isMounted = useIsMounted()
 
@@ -39,7 +40,12 @@ export default function ChatInterface({
         messages: [],
       })
     }
-  }, [setChat, chatProp])
+
+    // Cleanup function to help with memory management when component unmounts
+    return () => {
+      clearChat();
+    };
+  }, [setChat, chatProp, clearChat])
 
   const shouldShowChat = useMemo(() => {
     if (!isMounted) return false
@@ -52,7 +58,7 @@ export default function ChatInterface({
   return (
     <>
       {shouldShowChat ? (
-        <Chat initialId={chatState.id} user={user} key={chatState.id} />
+        <ChatInterfaceModern chat={chatState} user={user} />
       ) : (
         <ConnectionForm setConnectionString={setValue} />
       )}

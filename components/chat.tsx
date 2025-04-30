@@ -110,20 +110,49 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
     return isLoading && lastMessageIsUser
   }, [isLoading, messages])
 
-  // New state to manage SQL results
+  // New state to manage SQL results with a cap on size
   const [sqlResults, setSqlResults] = useState<{
     [key: string]: QueryResult<unknown[]> | string
   }>({})
 
+  // Maximum number of SQL results to keep in memory
+  const MAX_SQL_RESULTS = 10 // Reduced from 20 to 10 to keep memory usage lower
+
   const handleSetSqlResult = useCallback(
     (messageId: string, result: QueryResult<unknown[]> | string) => {
-      setSqlResults((prev) => ({
-        ...prev,
-        [messageId]: result,
-      }))
+      setSqlResults((prev) => {
+        const newResults = {
+          ...prev,
+          [messageId]: result,
+        }
+        
+        // Check if we have too many results and trim if needed
+        const keys = Object.keys(newResults)
+        if (keys.length > MAX_SQL_RESULTS) {
+          // Remove oldest entries to stay under the limit
+          const keysToKeep = keys.slice(-MAX_SQL_RESULTS)
+          const trimmedResults: typeof newResults = {}
+          
+          // Only keep the most recent results
+          keysToKeep.forEach(key => {
+            trimmedResults[key] = newResults[key]
+          })
+          
+          return trimmedResults
+        }
+        
+        return newResults
+      })
     },
     []
   )
+
+  // Optimize large message lists by capping the rendered messages
+  // Only keep the 10 most recent messages to prevent memory issues
+  const displayMessages = useMemo(() => {
+    if (messages.length <= 10) return messages;
+    return messages.slice(-10);
+  }, [messages]);
 
   const toolsLoading = useMemo(() => {
     const toolInvocation = messages[messages.length - 1]?.toolInvocations
@@ -138,8 +167,13 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
       <div ref={messagesChat} className="flex-1 overflow-y-auto w-full">
         <div className="container mx-auto max-w-4xl h-full">
           <div className="px-4 py-6">
+            {messages.length > 10 && (
+              <div className="text-center text-sm text-muted-foreground mb-6">
+                Showing only the most recent messages to optimize performance
+              </div>
+            )}
             <div className="w-full space-y-12">
-              {messages.map((message) => (
+              {displayMessages.map((message) => (
                 <motion.div
                   key={message.id}
                   initial={{ opacity: 0, y: 20 }}
@@ -171,8 +205,10 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
                                 return null
                               }
 
-                              const content =
-                                'text' in part ? part.text : part.reasoning
+                              // Fix TypeScript error by properly checking for part type
+                              const content = 
+                                'text' in part ? part.text : 
+                                ('reasoning' in part ? part.reasoning : '');
 
                               return (
                                 <Markdown

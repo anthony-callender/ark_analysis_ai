@@ -19,6 +19,8 @@ type AppState = {
   setChats: (chats: AppState['chats']) => void
   setChat: (chat: AppState['chat']) => void
   updateChats: () => Promise<void>
+  clearChat: () => void
+  getChat: (id: string) => AppState['chat']
 }
 
 export const useAppState = create<AppState>((set, get) => ({
@@ -27,18 +29,41 @@ export const useAppState = create<AppState>((set, get) => ({
   setChats: (chats) => set({ chats }),
   setChat: (chat) => set({ chat }),
   updateChats: async () => {
-    // await 3 seconds
-    await new Promise((resolve) => setTimeout(resolve, 3000))
+    try {
+      console.log('Updating chats list from the database')
+      const { data, error } = await getChats()
+      
+      if (error) {
+        console.error('Error updating chats:', error)
+        return
+      }
 
-    const { data, error } = await getChats()
-    if (error) {
-      return
+      if (!data) {
+        console.warn('No chat data returned')
+        return
+      }
+
+      console.log(`Received ${data.length} chats from the database`)
+      set({ chats: data })
+    } catch (error) {
+      console.error('Error in updateChats:', error)
     }
-
-    if (!data) {
-      return
-    }
-
-    set({ chats: data })
   },
+  clearChat: () => set({ 
+    chat: { 
+      id: '', 
+      name: '', 
+      messages: [] 
+    } 
+  }),
+  getChat: (id) => {
+    const state = get()
+    const chat = state.chats.find(c => c.id === id)
+    if (!chat) return null
+    return {
+      id: chat.id,
+      name: chat.name,
+      messages: state.chat?.id === id ? state.chat.messages : []
+    }
+  }
 }))

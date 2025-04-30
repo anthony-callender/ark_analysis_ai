@@ -51,6 +51,15 @@ export interface StructuredDocumentation {
     columns?: string[];
     keywords?: string[];
     question_template?: string;
+    question_variants?: string[];
+    common_phrasings?: string[];
+    context?: {
+      report_type?: string;
+      audience?: string;
+      decision_support?: string;
+      frequency?: string;
+      theological_focus?: string;
+    };
   };
 }
 
@@ -60,7 +69,8 @@ export class SchemaVectorStore {
   private embeddings;
   private tableName = 'schema_vectors';
   private queryCache: Map<string, {timestamp: number, results: SchemaVectorEntry[]}> = new Map();
-  private CACHE_TTL = 30 * 60 * 1000; // 30 minutes in milliseconds
+  private CACHE_TTL = 15 * 60 * 1000; // Reduced from 30 to 15 minutes in milliseconds
+  private MAX_CACHE_ENTRIES = 50; // Reduced from 100 to 50 entries to avoid memory bloat
 
   constructor(supabaseUrl: string, supabaseKey: string, openaiApiKey: string) {
     this.supabaseClient = createClient(supabaseUrl, supabaseKey);
@@ -91,6 +101,35 @@ export class SchemaVectorStore {
     
     console.timeEnd(clearTimerId);
     console.log('Vector store cleared successfully');
+  }
+
+  // Clean up expired cache entries or trim cache if it exceeds max size
+  private cleanupCache() {
+    const now = Date.now();
+    let entriesToDelete: string[] = [];
+    
+    // Identify expired entries
+    this.queryCache.forEach((value, key) => {
+      if (now - value.timestamp > this.CACHE_TTL) {
+        entriesToDelete.push(key);
+      }
+    });
+    
+    // Delete expired entries
+    entriesToDelete.forEach(key => this.queryCache.delete(key));
+    
+    // If cache is still too large, remove oldest entries
+    if (this.queryCache.size > this.MAX_CACHE_ENTRIES) {
+      // Convert to array to sort by timestamp
+      const entries = Array.from(this.queryCache.entries());
+      entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+      
+      // Remove oldest entries to get back to max size
+      const entriesToRemove = entries.slice(0, entries.length - this.MAX_CACHE_ENTRIES);
+      entriesToRemove.forEach(entry => this.queryCache.delete(entry[0]));
+      
+      console.log(`Cleaned up cache: removed ${entriesToRemove.length} oldest entries`);
+    }
   }
 
   // Store schema information in the vector store
@@ -262,87 +301,215 @@ export class SchemaVectorStore {
     return this.supabaseClient;
   }
 
-  // Search the vector store for relevant schema information
-  async searchSchemaInfo(query: string, limit: number = 10): Promise<SchemaVectorEntry[]> {
-    const searchTimerId = `searchSchemaInfo-${Date.now()}`;
-    console.time(searchTimerId);
-    
-    // Check if we have this query in cache
-    const cacheKey = `${query}-${limit}`;
-    const cached = this.queryCache.get(cacheKey);
-    const now = Date.now();
-    
-    // If cache exists and is still valid
-    if (cached && now - cached.timestamp < this.CACHE_TTL) {
-      console.log('Using cached results for query:', query);
-      console.timeEnd(searchTimerId);
-      return cached.results;
+  // Update the main search method to use our optimized search
+  public async searchSchemaInfo(query: string, limit: number = 10): Promise<any[]> {
+    // Use the optimized search method that applies weighted ranking
+    return this.searchSchemaInfoWithOptimizedParams(query, limit);
+  }
+
+  // Add a method to tune retrieval settings based on query characteristics
+  public async searchSchemaInfoWithOptimizedParams(query: string, limit: number = 10): Promise<any[]> {
+    if (!this.supabaseClient) {
+      throw new Error('Supabase client not initialized');
     }
     
-    console.log('Generating embedding for query:', query);
-    const queryTimerId = `queryEmbedding-${Date.now()}`;
-    console.time(queryTimerId);
-    const queryEmbedding = await this.embeddings.embedText(query);
-    console.timeEnd(queryTimerId);
+    // Cleanup cache to prevent memory bloat
+    this.cleanupCache();
     
-    console.log('Performing vector search');
-    const searchVecTimerId = `vectorSearch-${Date.now()}`;
-    console.time(searchVecTimerId);
-    const { data, error } = await this.supabaseClient.rpc('match_schema_vectors', {
-      query_embedding: queryEmbedding,
-      match_threshold: 0.29,
-      match_count: limit
-    });
-    console.timeEnd(searchVecTimerId);
+    // Check if we have a cached result
+    const cacheKey = `${query}:${limit}`;
+    const cachedResult = this.queryCache.get(cacheKey);
+    if (cachedResult && (Date.now() - cachedResult.timestamp < this.CACHE_TTL)) {
+      console.log(`Cache hit for query: "${query.substring(0, 50)}..."`);
+      return cachedResult.results;
+    }
+    
+    console.log(`Cache miss for query: "${query.substring(0, 50)}..."`);
+    
+    // Analyze the query to determine if it's likely a template match
+    const isLikelyTemplateQuery = this.isTemplateQuery(query);
+    
+    // Adjust threshold based on query characteristics
+    const matchThreshold = isLikelyTemplateQuery ? 0.25 : 0.29;
+    
+    // Generate embedding for query
+    const embedding = await this.embeddings.embedText(query);
+    
+    if (!embedding) {
+      return [];
+    }
+    
+    // Limit the number of results to avoid memory issues
+    const effectiveLimit = Math.min(limit, 15); // Cap at 15 results maximum
+    
+    // Run similarity search with adjusted parameters
+    const { data: matches, error } = await this.supabaseClient.rpc(
+      'match_schema_vectors',
+      {
+        query_embedding: embedding,
+        match_threshold: matchThreshold,
+        match_count: effectiveLimit
+      }
+    );
     
     if (error) {
-      console.error('Vector search error:', error);
-      throw new Error(`Failed to search vectors: ${error.message}`);
+      console.error('Error during vector similarity search:', error);
+      return [];
     }
     
-    // Format results for better readability
-    const formattedResults = data.map((item: any) => {
-      // Check if this is a structured documentation item
-      const isStructured = item.title && item.metadata && 
-        (item.metadata.category || item.metadata.raw_content);
+    let results = matches || [];
+    
+    // If it's a likely template query, prioritize template results
+    if (isLikelyTemplateQuery && results.length > 0) {
+      // Move template results to the top
+      const templateResults = results.filter((m: any) => m.id.startsWith('tmpl_'));
+      const otherResults = results.filter((m: any) => !m.id.startsWith('tmpl_'));
       
-      if (isStructured) {
-        // Format structured documentation
-        const rawContent = item.metadata.raw_content || '';
-        const category = item.metadata.category || '';
-        const tables = item.metadata.tables ? item.metadata.tables.join(', ') : '';
-        const keywords = item.metadata.keywords ? item.metadata.keywords.join(', ') : '';
-        
-        // Create a nicely formatted content string
-        item.content = `[${category}] ${item.title}\n${rawContent}`;
-        
-        // Add tables and keywords info if available
-        if (tables) item.content += `\nTables: ${tables}`;
-        if (keywords) item.content += `\nKeywords: ${keywords}`;
-        
-        // Add similarity score
-        item.content += `\nRelevance: ${(item.similarity * 100).toFixed(1)}%`;
-      }
-      
-      return item;
+      results = [...templateResults, ...otherResults].slice(0, effectiveLimit);
+    }
+    
+    // Optimize memory by removing large embedding arrays before storing in cache
+    const optimizedResults = results.map((result: any) => {
+      // Create a new object without the embedding property
+      const { embedding, ...rest } = result;
+      return rest;
     });
     
-    // Store in cache
-    this.queryCache.set(cacheKey, { timestamp: now, results: formattedResults });
+    // Store in cache with current timestamp
+    this.queryCache.set(cacheKey, {
+      timestamp: Date.now(),
+      results: optimizedResults
+    });
     
-    console.log(`Found ${formattedResults.length} relevant documentation items with threshold 0.29`);
-    // Add detailed logging to show similarity scores
-    if (formattedResults && formattedResults.length > 0) {
-      console.log('Similarity scores:');
-      formattedResults.forEach((item: any, index: number) => {
-        const title = item.title || 'Untitled';
-        console.log(`  ${index + 1}. ${title} | Score: ${item.similarity.toFixed(4)}`);
-      });
+    // Check if cache size exceeds limit after adding new entry
+    if (this.queryCache.size > this.MAX_CACHE_ENTRIES) {
+      this.cleanupCache();
     }
     
-    console.timeEnd(searchTimerId);
+    return optimizedResults;
+  }
+  
+  // Helper method to detect if a query is likely looking for a template
+  private isTemplateQuery(query: string): boolean {
+    const templateIndicators = [
+      'how many', 'what is', 'what are', 'show me', 'tell me', 'calculate', 
+      'percentage', 'average', 'correlation', 'compare', 'relationship',
+      'trend', 'distribution', 'count', 'score', 'belief', 'report'
+    ];
     
-    return formattedResults;
+    const lowerQuery = query.toLowerCase();
+    
+    // Check for presence of template indicators
+    return templateIndicators.some(indicator => lowerQuery.includes(indicator.toLowerCase()));
+  }
+
+  private async storeDocumentationAsVectors(documentation: StructuredDocumentation[]): Promise<number> {
+    if (!this.supabaseClient) {
+      throw new Error('Supabase client not initialized');
+    }
+
+    let totalStored = 0;
+
+    for (const doc of documentation) {
+      // Weight templates more heavily by constructing an enhanced text representation
+      // that repeats important fields for increased relevance in vector similarity search
+      let enhancedContent = doc.content;
+      
+      // Check if this is a template (question-SQL pair)
+      const isTemplate = doc.id.startsWith('tmpl_');
+      
+      if (isTemplate && doc.metadata) {
+        // For templates, create a text representation that emphasizes the question patterns
+        // and repeats key metadata to increase its weight in vector search
+        
+        // Extract question from content (first line after "Question: ")
+        const questionMatch = doc.content.match(/Question: (.*?)\n/);
+        const questionText = questionMatch ? questionMatch[1] : '';
+        
+        // Build enhanced text for better semantic matching
+        let enhancedText = '';
+        
+        // Repeat the title and question for higher weight
+        enhancedText += `${doc.title}\n${questionText}\n${questionText}\n`;
+        
+        // Add question variants with high weight (repeat twice)
+        if (doc.metadata.question_variants && doc.metadata.question_variants.length > 0) {
+          enhancedText += 'Similar questions:\n';
+          doc.metadata.question_variants.forEach(variant => {
+            enhancedText += `${variant}\n${variant}\n`;
+          });
+        }
+        
+        // Add common phrasings
+        if (doc.metadata.common_phrasings && doc.metadata.common_phrasings.length > 0) {
+          enhancedText += 'Common phrasings:\n';
+          doc.metadata.common_phrasings.forEach(phrasing => {
+            enhancedText += `${phrasing}\n`;
+          });
+        }
+        
+        // Add keywords with high weight
+        if (doc.metadata.keywords && doc.metadata.keywords.length > 0) {
+          enhancedText += 'Key terms: ';
+          enhancedText += doc.metadata.keywords.join(', ');
+          enhancedText += '\n';
+          // Repeat keywords for extra weight
+          enhancedText += 'Key terms: ';
+          enhancedText += doc.metadata.keywords.join(', ');
+          enhancedText += '\n';
+        }
+        
+        // Add context information if available
+        if (doc.metadata.context) {
+          const ctx = doc.metadata.context;
+          enhancedText += `Context: ${ctx.report_type || ''} ${ctx.audience || ''} ${ctx.decision_support || ''} ${ctx.theological_focus || ''}\n`;
+        }
+        
+        // Add category with high weight (repeat twice for emphasis)
+        if (doc.metadata.category) {
+          enhancedText += `Category: ${doc.metadata.category}\n`;
+          enhancedText += `Category: ${doc.metadata.category}\n`;
+        }
+        
+        // Add tables and columns
+        if (doc.metadata.tables && doc.metadata.tables.length > 0) {
+          enhancedText += `Tables: ${doc.metadata.tables.join(', ')}\n`;
+        }
+        
+        if (doc.metadata.columns && doc.metadata.columns.length > 0) {
+          enhancedText += `Columns: ${doc.metadata.columns.join(', ')}\n`;
+        }
+        
+        // Combine the enhanced text with the original content
+        // This preserves the SQL query information while emphasizing question patterns
+        enhancedContent = enhancedText + '\n' + doc.content;
+      }
+
+      // Generate embedding for the enhanced content
+      const embedding = await this.embeddings.embedText(enhancedContent);
+      
+      if (embedding) {
+        // Store in schema_vectors table
+        const { error } = await this.supabaseClient
+          .from(this.tableName)
+          .insert({
+            id: doc.id,
+            content: doc.content,
+            embedding: embedding,
+            type: 'documentation',
+            title: doc.title,
+            metadata: doc.metadata || {}
+          });
+        
+        if (error) {
+          console.error(`Error storing documentation vector: ${doc.id}`, error);
+        } else {
+          totalStored++;
+        }
+      }
+    }
+    
+    return totalStored;
   }
 }
 

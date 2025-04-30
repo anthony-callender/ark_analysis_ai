@@ -19,7 +19,7 @@ export default async function Layout({
   return (
     <SidebarProvider>
       <AppSidebar />
-      <main className="flex h-screen w-full">{children}</main>
+      <main className="flex h-screen w-full overflow-hidden">{children}</main>
     </SidebarProvider>
   )
 }
