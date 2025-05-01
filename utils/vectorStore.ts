@@ -69,8 +69,9 @@ export class SchemaVectorStore {
   private embeddings;
   private tableName = 'schema_vectors';
   private queryCache: Map<string, {timestamp: number, results: SchemaVectorEntry[]}> = new Map();
-  private CACHE_TTL = 15 * 60 * 1000; // Reduced from 30 to 15 minutes in milliseconds
-  private MAX_CACHE_ENTRIES = 50; // Reduced from 100 to 50 entries to avoid memory bloat
+  private CACHE_TTL = 10 * 60 * 1000; // Further reduced from 15 to 10 minutes to free memory faster
+  private MAX_CACHE_ENTRIES = 25; // Further reduced from 50 to 25 entries to minimize memory usage
+  private lastCleanupTime = 0; // Track last cleanup time to avoid too frequent cleanups
 
   constructor(supabaseUrl: string, supabaseKey: string, openaiApiKey: string) {
     this.supabaseClient = createClient(supabaseUrl, supabaseKey);
@@ -103,9 +104,17 @@ export class SchemaVectorStore {
     console.log('Vector store cleared successfully');
   }
 
-  // Clean up expired cache entries or trim cache if it exceeds max size
+  // Enhanced cleanup cache with time-based trigger control
   private cleanupCache() {
     const now = Date.now();
+    
+    // Only perform full cleanup if it's been at least 30 seconds since last cleanup
+    // This prevents excessive CPU usage from too frequent cleanups
+    if (now - this.lastCleanupTime < 30000 && this.queryCache.size < this.MAX_CACHE_ENTRIES) {
+      return;
+    }
+    
+    this.lastCleanupTime = now;
     let entriesToDelete: string[] = [];
     
     // Identify expired entries
@@ -129,6 +138,15 @@ export class SchemaVectorStore {
       entriesToRemove.forEach(entry => this.queryCache.delete(entry[0]));
       
       console.log(`Cleaned up cache: removed ${entriesToRemove.length} oldest entries`);
+    }
+    
+    // Force garbage collection hint (doesn't actually force GC but helps suggest it)
+    if (global.gc) {
+      try {
+        global.gc();
+      } catch (e) {
+        // Ignore if not available
+      }
     }
   }
 
@@ -316,31 +334,34 @@ export class SchemaVectorStore {
     // Cleanup cache to prevent memory bloat
     this.cleanupCache();
     
-    // Check if we have a cached result
-    const cacheKey = `${query}:${limit}`;
+    // Normalize the query to improve cache hits by trimming extra spaces
+    const normalizedQuery = query.trim().replace(/\s+/g, ' ').toLowerCase();
+    
+    // Create a more efficient cache key
+    const cacheKey = `${normalizedQuery}:${limit}`;
     const cachedResult = this.queryCache.get(cacheKey);
     if (cachedResult && (Date.now() - cachedResult.timestamp < this.CACHE_TTL)) {
-      console.log(`Cache hit for query: "${query.substring(0, 50)}..."`);
+      console.log(`Cache hit for query: "${normalizedQuery.substring(0, 30)}..."`);
       return cachedResult.results;
     }
     
-    console.log(`Cache miss for query: "${query.substring(0, 50)}..."`);
+    console.log(`Cache miss for query: "${normalizedQuery.substring(0, 30)}..."`);
     
     // Analyze the query to determine if it's likely a template match
-    const isLikelyTemplateQuery = this.isTemplateQuery(query);
+    const isLikelyTemplateQuery = this.isTemplateQuery(normalizedQuery);
     
     // Adjust threshold based on query characteristics
     const matchThreshold = isLikelyTemplateQuery ? 0.25 : 0.29;
     
     // Generate embedding for query
-    const embedding = await this.embeddings.embedText(query);
+    const embedding = await this.embeddings.embedText(normalizedQuery);
     
     if (!embedding) {
       return [];
     }
     
     // Limit the number of results to avoid memory issues
-    const effectiveLimit = Math.min(limit, 15); // Cap at 15 results maximum
+    const effectiveLimit = Math.min(limit, 10); // Further reduced from 15 to 10 results
     
     // Run similarity search with adjusted parameters
     const { data: matches, error } = await this.supabaseClient.rpc(
@@ -368,11 +389,38 @@ export class SchemaVectorStore {
       results = [...templateResults, ...otherResults].slice(0, effectiveLimit);
     }
     
-    // Optimize memory by removing large embedding arrays before storing in cache
+    // Further optimize memory by only keeping essential fields
     const optimizedResults = results.map((result: any) => {
-      // Create a new object without the embedding property
-      const { embedding, ...rest } = result;
-      return rest;
+      // Extract only the fields we need, dropping the embedding completely
+      const { 
+        id, 
+        content, 
+        type, 
+        similarity, 
+        table_name, 
+        column_name, 
+        title 
+      } = result;
+      
+      // Only keep essential metadata fields if present
+      const essentialMetadata = result.metadata ? {
+        category: result.metadata.category,
+        tables: result.metadata.tables,
+        columns: result.metadata.columns,
+        keywords: result.metadata.keywords,
+      } : undefined;
+      
+      // Return a much smaller object
+      return {
+        id,
+        content,
+        type,
+        similarity,
+        table_name,
+        column_name,
+        title,
+        metadata: essentialMetadata
+      };
     });
     
     // Store in cache with current timestamp

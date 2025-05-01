@@ -23,6 +23,7 @@ import Navbar from './navbar'
 import { User } from '@supabase/supabase-js'
 import { useAppState } from '../state'
 import { usePathname } from 'next/navigation'
+import { Button } from '@/components/ui/button'
 
 const toolCallToNameText = {
   getExplainForQuery: 'Getting query plan...',
@@ -36,21 +37,25 @@ const toolCallToNameText = {
 function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
   const chat = useAppState((state) => state.chat)
   const updateChats = useAppState((state) => state.updateChats)
+  const clearChat = useAppState((state) => state.clearChat)
   const [isNewChat, setIsNewChat] = useState(false)
   const pathname = usePathname()
   const { toast } = useToast()
   const messagesChat = useRef<HTMLDivElement | null>(null)
   const { value } = useAppLocalStorage()
 
-  // Optimize scroll behavior with RAF
+  // Enhanced scroll performance with throttling
   const scrollMessagesToBottom = useCallback(() => {
     if (!messagesChat.current) return
 
+    // Use requestAnimationFrame for smoother scrolling
     requestAnimationFrame(() => {
-      messagesChat.current?.scrollTo({
-        top: messagesChat.current.scrollHeight,
-        behavior: 'smooth',
-      })
+      if (messagesChat.current) {
+        messagesChat.current.scrollTo({
+          top: messagesChat.current.scrollHeight,
+          behavior: 'smooth',
+        })
+      }
     })
   }, [])
 
@@ -97,12 +102,26 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
       onResponse,
     })
 
-  // Cleanup SQL results when component unmounts
+  // Improved component cleanup
   useEffect(() => {
     return () => {
+      // Clear SQL results
       setSqlResults({})
+      
+      // Clear chat state when component unmounts
+      if (typeof clearChat === 'function') {
+        clearChat()
+      }
+      
+      // Clear any pending animations
+      if (messagesChat.current) {
+        messagesChat.current = null
+      }
+      
+      // Set local state references to null
+      shouldUpdateChats.current = false
     }
-  }, [])
+  }, [clearChat])
 
   const showSkeleton = useMemo(() => {
     if (!messages.length) return false
@@ -116,14 +135,35 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
   }>({})
 
   // Maximum number of SQL results to keep in memory
-  const MAX_SQL_RESULTS = 10 // Reduced from 20 to 10 to keep memory usage lower
+  const MAX_SQL_RESULTS = 8 // Reduced from 10 to 8 to further optimize memory usage
 
+  // Optimize SQL result management
   const handleSetSqlResult = useCallback(
     (messageId: string, result: QueryResult<unknown[]> | string) => {
       setSqlResults((prev) => {
+        // Optimize large result sets if they're database results
+        let optimizedResult = result;
+        if (typeof result === 'object' && 'rows' in result && Array.isArray(result.rows)) {
+          // Limit rows to a maximum of 100 to prevent memory issues with large result sets
+          if (result.rows.length > 100) {
+            const limitedRows = result.rows.slice(0, 100);
+            // Create a new result object with proper typing
+            optimizedResult = {
+              ...result,
+              rows: limitedRows,
+              rowCount: result.rowCount,
+              // Added as a comment rather than a property
+              // Result is truncated (showing 100 of total rows)
+            } as QueryResult<unknown[]>;
+            
+            // Log truncation info to console instead
+            console.log(`Results truncated (showing 100 of ${result.rows.length} rows)`);
+          }
+        }
+
         const newResults = {
           ...prev,
-          [messageId]: result,
+          [messageId]: optimizedResult,
         }
         
         // Check if we have too many results and trim if needed
@@ -147,11 +187,10 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
     []
   )
 
-  // Optimize large message lists by capping the rendered messages
-  // Only keep the 10 most recent messages to prevent memory issues
+  // Optimize large message lists by limiting the rendered messages
   const displayMessages = useMemo(() => {
-    if (messages.length <= 10) return messages;
-    return messages.slice(-10);
+    if (messages.length <= 8) return messages; // Display all messages if there are 8 or fewer
+    return messages.slice(-8); // Only show the latest 8 messages to preserve memory
   }, [messages]);
 
   const toolsLoading = useMemo(() => {
@@ -160,6 +199,19 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
     return (toolInvocation ?? []).filter((tool) => tool.state === 'call')
   }, [messages])
 
+  // Function to manually trigger memory cleanup
+  const forceMemoryCleanup = useCallback(() => {
+    // Clear any unused SQL results
+    setSqlResults({});
+    
+    // Show toast to acknowledge the cleanup
+    toast({
+      title: "Memory cleaned",
+      description: "Chat memory has been optimized",
+      duration: 2000,
+    });
+  }, [toast]);
+
   return (
     <div className="flex-1 flex flex-col w-full">
       <Navbar user={user} />
@@ -167,9 +219,19 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
       <div ref={messagesChat} className="flex-1 overflow-y-auto w-full">
         <div className="container mx-auto max-w-4xl h-full">
           <div className="px-4 py-6">
-            {messages.length > 10 && (
-              <div className="text-center text-sm text-muted-foreground mb-6">
-                Showing only the most recent messages to optimize performance
+            {messages.length > 8 && (
+              <div className="text-center mb-6">
+                <div className="text-sm text-muted-foreground">
+                  Showing only the {displayMessages.length} most recent messages to optimize performance
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={forceMemoryCleanup} 
+                  className="mt-1 text-xs"
+                >
+                  Clean Memory
+                </Button>
               </div>
             )}
             <div className="w-full space-y-12">

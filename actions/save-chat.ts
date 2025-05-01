@@ -116,8 +116,10 @@ export async function saveChat({
       return { success: true, name: chatName }
     }
 
-    // Revalidate the app path to refresh the sidebar
+    // Revalidate all app paths to refresh UI components
     revalidatePath('/app')
+    revalidatePath(`/app/${id}`)
+    
     return { success: true }
   } catch (error) {
     console.error('Error saving chat:', error)

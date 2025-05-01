@@ -82,4 +82,47 @@
   html, body {
     @apply bg-background text-foreground overflow-hidden h-screen;
   }
+  
+  /* Ensure proper app container sizing */
+  #__next, main {
+    @apply h-full w-full;
+  }
+  
+  /* Better message bubble sizing */
+  @media (min-width: 768px) {
+    .max-w-xs {
+      max-width: 24rem;
+    }
+    .max-w-md {
+      max-width: 32rem;
+    }
+  }
+}
+
+/* Animation for loading indicators */
+@keyframes bounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+.animate-bounce {
+  animation: bounce 1s infinite;
+}
+
+/* Pulse animation for skeletons */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.animatePulse {
+  animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }

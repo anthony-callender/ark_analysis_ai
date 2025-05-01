@@ -1,10 +1,7 @@
 import { createClient } from '@/utils/supabase/server'
-
-import { SidebarProvider } from '@/components/ui/sidebar'
-import { AppSidebar } from '@/components/app-sidebar'
 import { redirect } from 'next/navigation'
 
-export default async function Layout({
+export default async function AppLayout({
   children,
 }: {
   children: React.ReactNode
@@ -17,9 +14,6 @@ export default async function Layout({
   }
 
   return (
-    <SidebarProvider>
-      <AppSidebar />
-      <main className="flex h-screen w-full overflow-hidden">{children}</main>
-    </SidebarProvider>
+    <main className="flex w-full h-screen overflow-hidden">{children}</main>
   )
 }

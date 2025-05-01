@@ -37,6 +37,14 @@ const TARGET_TABLES = [
   'tc_grade_levels_snapshots',
   'diocese_student_snapshot_dcqs',
   'diocese_student_snapshot_grade_levels',
+  'users',
+
+  // 🆕 Added based on usage in the queries
+  'academic_years',
+  'testing_section_student_domain_scores',
+  'user_answers',
+  'questions',
+  'answers'
 ];
 
 // Define the structured documentation
@@ -1400,7 +1408,7 @@ export async function POST(req: Request) {
   }
 
   const result = streamText({
-    model: openai('gpt-4o'),
+    model: openai('gpt-4.1-mini'),
     messages: convertToCoreMessages(messages),
     system: `
      You are a PostgreSQL Query Generator Agent. Your primary responsibility is to generate accurate and efficient SQL queries based on user requests.

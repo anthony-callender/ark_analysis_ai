@@ -2,24 +2,42 @@
 
 import { Client } from 'pg'
 
-export const validateDbConnection = async (
-  connectionString: string
-): Promise<'Valid connection' | string> => {
+export async function validateDbConnection(connectionString: string): Promise<string> {
+  if (!connectionString) {
+    return 'Connection string is required'
+  }
+
   const client = new Client({
     connectionString,
   })
 
   try {
+    // Try to connect
     await client.connect()
-    await client.query('SELECT 1')
+    
+    // Run a simple query to verify connection
+    const result = await client.query('SELECT NOW() as current_time')
+    
+    // Properly close the connection
     await client.end()
-  } catch (error) {
-    if (error instanceof Error) {
-      console.log('error', error)
-      return error.message
+    
+    if (result.rows.length > 0) {
+      return 'Valid connection'
+    } else {
+      return 'Connected but failed to execute test query'
     }
-    return 'Unknown error'
+  } catch (error) {
+    // Close the connection if it was opened
+    try {
+      await client.end()
+    } catch (e) {
+      // Ignore errors during cleanup
+    }
+    
+    if (error instanceof Error) {
+      return `Connection error: ${error.message}`
+    }
+    
+    return 'Unknown connection error'
   }
-
-  return 'Valid connection'
 }

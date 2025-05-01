@@ -32,7 +32,7 @@ export default async function RootLayout({
           window.$crisp=[];window.CRISP_WEBSITE_ID="41a9dc67-1760-4d2c-b1ec-4e8be0ece866";(function(){d=document;s=d.createElement("script");
           s.src="https://client.crisp.chat/l.js";s.async=1;d.getElementsByTagName("head")[0].appendChild(s);})();`}
         </Script>
-        <body className="bg-background text-foreground overflow-hidden">
+        <body className="bg-background text-foreground h-screen overflow-hidden">
           <ThemeProvider
             attribute="class"
             defaultTheme="dark"

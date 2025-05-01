@@ -1,9 +1,9 @@
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 
-import ChatInterface from '@/components/chat-interface'
+import { ChatApp } from '@/components/chat-app'
 
-export default async function ProtectedPage() {
+export default async function AppPage() {
   const supabase = await createClient()
 
   const {
@@ -14,5 +14,5 @@ export default async function ProtectedPage() {
     return redirect('/login')
   }
 
-  return <ChatInterface user={user} chat={undefined} />
+  return <ChatApp user={user} />
 }

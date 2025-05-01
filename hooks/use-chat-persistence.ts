@@ -11,6 +11,9 @@ export function useChatPersistence() {
   const { toast } = useToast()
   const savingRef = useRef(false)
   const toastShown = useRef(false)
+  const lastSavedMessagesRef = useRef<string>('')
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const updatePendingRef = useRef(false)
 
   const persistChat = useCallback(async (
     id: string, 
@@ -18,8 +21,17 @@ export function useChatPersistence() {
     messages: Message[],
     silent: boolean = false
   ) => {
-    if (savingRef.current) return
+    if (savingRef.current) return false
+    
+    // Check if messages have actually changed to avoid unnecessary saves
+    const messagesJson = JSON.stringify(messages)
+    if (messagesJson === lastSavedMessagesRef.current && lastSavedMessagesRef.current !== '') {
+      console.log('Skipping save as messages have not changed')
+      return true
+    }
+    
     savingRef.current = true;
+    lastSavedMessagesRef.current = messagesJson;
 
     try {
       console.log('Persisting chat:', id)
@@ -41,9 +53,6 @@ export function useChatPersistence() {
         }
         return false
       } else {
-        // Update the chats list in app state
-        await updateChats()
-        
         // If a new chat name was generated, update the current chat
         if (result.name && chat?.id === id && chat.name !== result.name) {
           console.log('Updating chat name to:', result.name)
@@ -51,6 +60,15 @@ export function useChatPersistence() {
             ...chat,
             name: result.name
           })
+        }
+        
+        // Set a flag to update chats later (outside of this function)
+        if (!updatePendingRef.current) {
+          updatePendingRef.current = true;
+          setTimeout(() => {
+            updateChats().catch(console.error);
+            updatePendingRef.current = false;
+          }, 2000); // Delay update to prevent rapid cycles
         }
         
         return true
@@ -71,13 +89,32 @@ export function useChatPersistence() {
     }
   }, [chat, toast, updateChats, setChat])
 
-  // Automatically persist the chat whenever it changes
+  // Automatically persist the chat whenever it changes, but with debouncing
   useEffect(() => {
-    if (chat?.id && chat.name) {
-      console.log('Chat changed, auto-persisting:', chat.id)
-      persistChat(chat.id, chat.name, chat.messages || [], true)
+    if (chat?.id && chat.name && chat.messages) {
+      // Cancel any pending debounce
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+      
+      // Setup a new debounce timer (1000ms)
+      debounceTimerRef.current = setTimeout(() => {
+        // Check if messages have changed since last save
+        const messagesJson = JSON.stringify(chat.messages);
+        if (messagesJson !== lastSavedMessagesRef.current) {
+          console.log('Debounced auto-persisting:', chat.id);
+          persistChat(chat.id, chat.name, chat.messages || [], true);
+        }
+      }, 1000);
     }
-  }, [chat?.id, chat?.name, chat?.messages, persistChat])
+    
+    // Cleanup on unmount
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [chat?.id, chat?.name, chat?.messages, persistChat]);
 
   return {
     persistChat
