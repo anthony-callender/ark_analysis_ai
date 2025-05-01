@@ -44,18 +44,24 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
   
   // Callback functions for useChat hook
   const onFinish = useCallback(() => {
+    // Use the global chat state which should be updated by the sync effect
+    const currentChatState = useAppState.getState().chat;
+    
     // Save the chat after the AI response is finished
-    if (chatState?.id) {
+    if (currentChatState?.id) {
       persistChat(
-        chatState.id, 
-        chatState.name, 
-        chatState.messages || [],
+        currentChatState.id,
+        currentChatState.name,
+        currentChatState.messages || [], // Use messages from the global state
         true
       ).catch(err => console.error("Error persisting chat:", err));
     }
-    
+
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [chatState, persistChat]);
+  // Only depend on persistChat and chatState.id/name if needed for condition check,
+  // but avoid depending on chatState.messages directly here to prevent loops.
+  // persistChat itself depends on useAppState, so it has access.
+  }, [persistChat]);
 
   const onError = useCallback((error: Error) => {
     toast({
@@ -131,17 +137,68 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
 
   // Update the app state when messages change
   useEffect(() => {
-    if (!chatState || !messages.length) return;
+    // Guard clauses: Only run if we have a valid chat context and messages from useChat
+    if (!chatState || !chatState.id || !messages || messages.length === 0) return;
+
+    // Track if the component is still mounted
+    let isMounted = true;
     
-    // Only update if messages have actually changed and we have a valid chatId
-    if (chatId && JSON.stringify(messages) !== JSON.stringify(chatState.messages)) {
-      console.log('Updating chat state with new messages:', messages.length);
-      setChat({
-        ...chatState,
-        messages: [...messages], // Create a new array to ensure state update
-      });
-    }
-  }, [messages, chatState, setChat, chatId]);
+    // Add debounce to avoid rapid state updates
+    const debounceTimeMs = 100; // 100ms debounce
+    const debounceTimerId = setTimeout(() => {
+      // Only proceed if component is still mounted
+      if (!isMounted) return;
+      
+      // Define the comparison function (ensure it handles null/undefined message arrays)
+      const messagesChanged = () => {
+          if (!chatState.messages) return true; // If global state has no messages yet, it's a change
+          if (messages.length !== chatState.messages.length) return true; // Length differs
+
+          // Compare message content, roles, and IDs
+          for (let i = 0; i < messages.length; i++) {
+            // Defensive checks for potentially undefined messages in arrays
+            const msgFromHook = messages[i];
+            const msgFromState = chatState.messages[i];
+            if (!msgFromHook || !msgFromState) return true; // Should not happen, but safe check
+
+            if (msgFromHook.content !== msgFromState.content ||
+                msgFromHook.role !== msgFromState.role ||
+                msgFromHook.id !== msgFromState.id
+               ) {
+              return true;
+            }
+          }
+          return false;
+        };
+
+      // Only update state if messages have actually changed
+      // Ensure chatId from props matches the state ID before syncing
+      if (chatId === chatState.id && messagesChanged()) {
+        console.log(`Syncing useChat messages (count: ${messages.length}) to global state for chat ID: ${chatState.id}`);
+        
+        // Use a setTimeout to break potential update cycles
+        // This prevents the Maximum update depth exceeded error
+        setTimeout(() => {
+          // Create a deep clone of the messages to prevent reference issues
+          const clonedMessages = messages.map(m => ({...m}));
+          setChat({
+            id: chatState.id, // Use existing ID from state
+            name: chatState.name, // Use existing name from state
+            messages: clonedMessages,
+          });
+        }, 0);
+      }
+    }, debounceTimeMs);
+    
+    // Clean up debounce timer on unmount
+    return () => {
+      isMounted = false;
+      clearTimeout(debounceTimerId);
+    };
+    
+    // Dependencies: Reduced set - run primarily when messages from useChat change
+    // for the relevant chat context (identified by chatState.id matching chatId).
+  }, [messages, chatState?.id, setChat, chatId]);
 
   // Handle form submission
   const handleFormSubmit = (e: React.FormEvent) => {

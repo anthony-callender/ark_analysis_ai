@@ -105,12 +105,12 @@ const DOCUMENTATION: StructuredDocumentation[] = [
   {
     "id": "chunk_06",
     "title": "Diocese naming convention",
-    "content": "Each diocese name starts with either 'Diocese of ___' or 'Archdiocese of ___'. Use that full prefix in filters.",
+    "content": "Each diocese name starts with either 'Diocese of ___' or 'Archdiocese of ___'. Use that full prefix in filters. ALWAYS use the exact full diocese name from getDioceseNames tool for exact matching. NEVER use partial names or LIKE operators for diocese filtering.",
     "metadata": {
       "category": "Naming rules",
       "tables": ["dioceses"],
       "columns": ["name"],
-      "keywords": ["diocese", "archdiocese"]
+      "keywords": ["diocese", "archdiocese", "exact name", "full name"]
     }
   },
   {
@@ -1418,15 +1418,24 @@ export async function POST(req: Request) {
      The tools available to you serve the following purposes:
      - getPublicTablesWithColumns: Returns ALL tables and their structure available for querying
      - getRelevantDocumentation: Returns documentation relevant to the specific query, including schema guidance, table usage details, and query patterns
+     - getDioceseNames: Returns the exact diocese names as they appear in the database. ALWAYS use this tool when a query involves dioceses.
 
       When generating queries:
      1. First call getPublicTablesWithColumns to see all available tables
      2. Then call getRelevantDocumentation to get documentation relevant to your specific query
-     3. Only use tables from the returned list - never reference tables not in this list
-     4. Include all required filters and joins as specified in the documentation
-     5. Use proper score calculations with NULLIF and type casting
-     6. Follow the guidance provided by getRelevantDocumentation
-     7. Present the final SQL query in a code block
+     3. If the query involves dioceses, ALWAYS call getDioceseNames to get the exact diocese name
+     4. Only use tables from the returned list - never reference tables not in this list
+     5. Include all required filters and joins as specified in the documentation
+     6. Use proper score calculations with NULLIF and type casting
+     7. Follow the guidance provided by getRelevantDocumentation
+     8. Present the final SQL query in a code block
+     
+     IMPORTANT: For diocese filtering, ALWAYS use the complete diocese name as returned by getDioceseNames. 
+     
+     Example:
+     User request: "What is the average theology score for Dallas?"
+     Incorrect: WHERE d.name LIKE '%Dallas%'
+     Correct: First call getDioceseNames with "Dallas" to get "Diocese of Dallas", then use: WHERE d.name = 'Diocese of Dallas'
     `,
     maxSteps: 22,
     tools: {
@@ -1544,21 +1553,69 @@ export async function POST(req: Request) {
               return 'No relevant documentation found for this query. Please try a different query or ask about specific tables or columns.';
             }
             
-            // Format results with more context for template matches
-            const formattedResults = relevantInfo.map((info: any) => {
-              if (info.id && info.id.startsWith('tmpl_') && info.title) {
-                // For templates, include the title/category for better context
-                return `TEMPLATE: ${info.title}\n${info.content}`;
+            // Format documentation for better readability
+            const formattedDocs = relevantInfo.map((info: any) => {
+              if (info.title) {
+                // New structured format
+                return `==== ${info.title} ====\n${info.content}\n`;
+              } else {
+                // Legacy format - just return content
+                return info.content;
               }
-              return info.content;
-            });
+            }).join('\n\n');
             
             console.timeEnd(infoTimerId);
-            return formattedResults.join('\n\n');
+            return formattedDocs;
           } catch (error) {
             console.error('Error retrieving documentation:', error);
-            return `Error retrieving documentation: ${error instanceof Error ? error.message : 'Unknown error'}`;
+            return 'Error retrieving documentation. Please try again with a different query.';
           }
+        },
+      }),
+
+      getDioceseNames: tool({
+        description: `Retrieves a list of all diocese names in their correct format. Use this when you need to reference a specific diocese in a query. Always use the exact diocese name string in queries, never a partial name.`,
+        parameters: z.object({
+          namePattern: z.string().optional().describe('Optional partial name to filter the list (e.g., "Dallas" to find "Diocese of Dallas")'),
+        }),
+        execute: async ({ namePattern }) => {
+          // List of all dioceses with their exact names as stored in the database
+          const dioceseList = [
+            "Diocese of Tucson",
+            "Diocese of Dallas",
+            "Diocese of Phoenix",
+            "Diocese of Atlanta", 
+            "Diocese of San Diego",
+            "Archdiocese of Los Angeles",
+            "Archdiocese of Chicago",
+            "Archdiocese of New York",
+            "Diocese of Sacramento",
+            "Diocese of Miami",
+            "Diocese of Boston",
+            "Diocese of San Francisco",
+            "Diocese of St. Petersburg",
+            "Diocese of Orlando",
+            "Diocese of Washington",
+            "Diocese of Fort Worth",
+            "Archdiocese of St. Louis"
+          ];
+          
+          // If a pattern is provided, filter the list
+          if (namePattern) {
+            const pattern = namePattern.toLowerCase();
+            const matches = dioceseList.filter(name => 
+              name.toLowerCase().includes(pattern)
+            );
+            
+            if (matches.length === 0) {
+              return `No dioceses found matching "${namePattern}". Please use one of these dioceses: ${dioceseList.join(", ")}`;
+            }
+            
+            return `Found ${matches.length} diocese(s) matching "${namePattern}":\n${matches.join("\n")}`;
+          }
+          
+          // Return all dioceses if no pattern is provided
+          return `List of all dioceses in their correct format (always use the exact name in queries):\n${dioceseList.join("\n")}`;
         },
       }),
 
