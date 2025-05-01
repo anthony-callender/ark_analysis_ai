@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useCallback } from "react";
+import { useEffect } from "react";
 import { ChatSidebar } from "./chat-sidebar";
 import { ChatWindow } from "./chat-window";
 import { useAppState } from "@/state";
@@ -17,33 +17,22 @@ interface ChatAppProps {
 }
 
 export function ChatApp({ user, chatId, initialChat }: ChatAppProps) {
-  const { setChat, updateChats } = useAppState();
+  const { setChat } = useAppState();
   
-  // Set initial chat if provided and trigger a chat list refresh
+  // Set initial chat if provided - do this only once on mount
   useEffect(() => {
     if (initialChat) {
       setChat(initialChat);
     }
-    
-    // Update the chat list to ensure it's in sync with the database
-    updateChats().catch(console.error);
-  }, [initialChat, setChat, updateChats]);
-  
-  // Handle any chat changes that require database synchronization
-  useEffect(() => {
-    // If the chatId changes, refresh the chats
-    if (chatId) {
-      updateChats().catch(console.error);
-    }
-  }, [chatId, updateChats]);
+  }, [initialChat, setChat]);
 
   return (
-    <div className="flex w-full h-full">
+    <div className="flex w-full h-screen overflow-hidden fixed inset-0">
       {/* Sidebar */}
       <ChatSidebar />
       
       {/* Main content */}
-      <main className="flex-1 flex flex-col overflow-hidden min-h-screen w-full">
+      <main className="flex-1 flex flex-col overflow-hidden">
         <ChatWindow user={user} chatId={chatId} />
       </main>
     </div>

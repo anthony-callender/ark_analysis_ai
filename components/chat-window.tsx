@@ -4,7 +4,6 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Send } from "lucide-react";
 import { motion } from "motion/react";
 import { Message } from "ai";
@@ -34,6 +33,9 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
   
   // SQL results state
   const [sqlResults, setSqlResults] = useState<Record<string, any>>({});
+  
+  // Check if we're on the main /app page without a specific chat
+  const isMainPage = !chatId;
   
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -74,7 +76,7 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
     []
   );
 
-  // Use the AI SDK chat hook
+  // Use the AI SDK chat hook - only initialize if we have a valid chat
   const { messages, isLoading, handleSubmit, append, error: chatError } = useChat({
     api: '/api/chat',
     headers: {
@@ -131,15 +133,15 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
   useEffect(() => {
     if (!chatState || !messages.length) return;
     
-    // Only update if messages have actually changed
-    if (JSON.stringify(messages) !== JSON.stringify(chatState.messages)) {
+    // Only update if messages have actually changed and we have a valid chatId
+    if (chatId && JSON.stringify(messages) !== JSON.stringify(chatState.messages)) {
       console.log('Updating chat state with new messages:', messages.length);
       setChat({
         ...chatState,
         messages: [...messages], // Create a new array to ensure state update
       });
     }
-  }, [messages, chatState, setChat]);
+  }, [messages, chatState, setChat, chatId]);
 
   // Handle form submission
   const handleFormSubmit = (e: React.FormEvent) => {
@@ -174,20 +176,33 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
   };
 
   return (
-    <Card className="w-full h-full flex flex-col border-0 rounded-none">
-      <CardContent className="flex-1 p-0 flex flex-col h-full">
-        <ScrollArea className="flex-1 px-4 py-6 md:px-6">
+    <Card className="w-full h-full flex flex-col border-0 rounded-none overflow-hidden relative">
+      <CardContent className="absolute inset-0 p-0 flex flex-col">
+        <div className="flex-1 px-4 py-6 md:px-6 overflow-y-auto">
           <div className="max-w-4xl mx-auto w-full space-y-8">
-            {messages.length === 0 && (
+            {(messages.length === 0 || isMainPage) && (
               <div className="text-center py-8">
-                <h3 className="text-xl font-semibold mb-2">Welcome to the Chat</h3>
-                <p className="text-muted-foreground">
-                  Start a conversation by typing a message below.
+                <h3 className="text-xl font-semibold mb-2">Welcome to Database Analysis AI</h3>
+                <p className="text-muted-foreground mb-4">
+                  {isMainPage 
+                    ? "Select an existing chat or create a new one to get started."
+                    : "Start a conversation by typing a message below."}
                 </p>
+                {isMainPage && (
+                  <div className="mt-4">
+                    <Button 
+                      variant="outline" 
+                      onClick={() => window.location.href = '/settings'}
+                      className="mx-auto"
+                    >
+                      Configure Database Settings
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
             
-            {messages.map((m) => (
+            {!isMainPage && messages.map((m) => (
               <motion.div
                 key={m.id}
                 initial={{ opacity: 0, y: 10 }}
@@ -279,24 +294,24 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
             )}
             <div ref={endRef} />
           </div>
-        </ScrollArea>
+        </div>
 
         <form
           onSubmit={handleFormSubmit}
-          className="border-t p-4 flex space-x-2 w-full"
+          className="border-t p-4 flex space-x-2 w-full sticky bottom-0 bg-background"
         >
           <div className="max-w-4xl w-full mx-auto flex gap-2">
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Type a message…"
+              placeholder={isMainPage ? "Select a chat to start messaging..." : "Type a message…"}
               rows={1}
               className="flex-1 resize-none"
-              disabled={isLoading}
+              disabled={isLoading || isMainPage}
             />
             <Button 
               type="submit" 
-              disabled={!input.trim() || isLoading} 
+              disabled={!input.trim() || isLoading || isMainPage} 
               className="shrink-0"
             >
               <Send className="h-5 w-5" />

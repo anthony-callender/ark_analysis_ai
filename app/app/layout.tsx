@@ -14,6 +14,6 @@ export default async function AppLayout({
   }
 
   return (
-    <main className="flex w-full h-screen overflow-hidden">{children}</main>
+    <main className="fixed inset-0 flex w-full h-screen overflow-hidden max-h-screen">{children}</main>
   )
 }

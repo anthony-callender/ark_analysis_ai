@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from "react";
-import { Plus, Settings } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Plus, Settings, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRouter, usePathname } from "next/navigation";
@@ -16,25 +16,41 @@ export function ChatSidebar() {
   const router = useRouter();
   const pathname = usePathname();
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Parse the active chat ID from the URL
   const activeId = pathname.startsWith('/app/') 
     ? pathname.split('/')[2] 
     : activeChat?.id || null;
 
-  // Load chats on mount and set up interval refresh
+  // Only load chats on mount - no interval refresh to avoid potential loops
   useEffect(() => {
-    // Initial load
-    updateChats().catch(console.error);
+    // Initial load once
+    const loadChats = async () => {
+      try {
+        await updateChats();
+      } catch (error) {
+        console.error("Error loading chats:", error);
+      }
+    };
     
-    // Set up polling to refresh chat list less frequently (every 10 seconds)
-    const intervalId = setInterval(() => {
-      updateChats().catch(console.error);
-    }, 10000); // Changed from 5000 to 10000 ms
+    loadChats();
+    // No dependencies - only run once on mount
+  }, []);
+  
+  // Manual refresh function
+  const handleManualRefresh = async () => {
+    if (refreshing) return;
     
-    // Cleanup interval on unmount
-    return () => clearInterval(intervalId);
-  }, [updateChats]);
+    setRefreshing(true);
+    try {
+      await updateChats();
+    } catch (error) {
+      console.error("Error refreshing chats:", error);
+    } finally {
+      setRefreshing(false);
+    }
+  };
   
   // Create a new chat
   const createChat = async () => {
@@ -69,62 +85,82 @@ export function ChatSidebar() {
     }
   };
 
-  // Group chats by date
-  const groupedChats = chats.reduce((groups, chat) => {
-    const date = new Date(chat.created_at);
-    const today = new Date();
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
+  // Memoize the sorted groups to prevent unnecessary re-renders
+  const sortedGroups = useMemo(() => {
+    // Simple function to get group name based on date
+    const getGroupName = (dateStr: string) => {
+      try {
+        const date = new Date(dateStr);
+        const today = new Date();
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        
+        if (date.toDateString() === today.toDateString()) return "Today";
+        if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+        return "Past Chats";
+      } catch (e) {
+        return "Past Chats";
+      }
+    };
+
+    // Group the chats
+    const groups: Record<string, Array<{id: string, title: string, messages: any[]}>> = {};
     
-    // Format dates to compare
-    const chatDate = date.toDateString();
-    const todayDate = today.toDateString();
-    const yesterdayDate = yesterday.toDateString();
+    // Initialize all possible groups to ensure consistent order
+    groups["Today"] = [];
+    groups["Yesterday"] = [];
+    groups["Past Chats"] = [];
     
-    let group;
-    if (chatDate === todayDate) {
-      group = "Today";
-    } else if (chatDate === yesterdayDate) {
-      group = "Yesterday";
-    } else {
-      group = "Past Chats";
-    }
-    
-    if (!groups[group]) {
-      groups[group] = [];
-    }
-    
-    groups[group].push({
-      id: chat.id,
-      title: chat.name,
-      messages: [], // We don't need to load all messages for the sidebar
+    // Add chats to groups
+    chats.forEach(chat => {
+      const group = getGroupName(chat.created_at);
+      groups[group].push({
+        id: chat.id,
+        title: chat.name,
+        messages: [], // We don't need messages for the sidebar
+      });
     });
     
-    return groups;
-  }, {} as Record<string, { id: string; title: string; messages: any[] }[]>);
-
-  // Sort groups by priority
-  const sortedGroups = [
-    { title: "Today", chats: groupedChats["Today"] || [] },
-    { title: "Yesterday", chats: groupedChats["Yesterday"] || [] },
-    { title: "Past Chats", chats: groupedChats["Past Chats"] || [] },
-  ].filter(group => group.chats.length > 0);
+    // Return only non-empty groups
+    return Object.entries(groups)
+      .filter(([_, items]) => items.length > 0)
+      .map(([title, chats]) => ({ title, chats }));
+  }, [chats]);
 
   return (
-    <aside className="w-64 border-r p-2 flex flex-col bg-background h-full min-h-screen">
-      <div className="flex items-center justify-between mb-2 px-2">
+    <aside className="w-64 border-r p-2 flex flex-col bg-background h-full relative">
+      <div className="flex items-center justify-between mb-2 px-2 sticky top-0 bg-background z-10">
         <h2 className="font-semibold text-lg">Chats</h2>
         <div className="flex gap-1">
-          <Button size="icon" variant="ghost" onClick={() => router.push('/settings')} title="Settings">
+          <Button 
+            size="icon" 
+            variant="ghost" 
+            onClick={handleManualRefresh} 
+            disabled={refreshing}
+            title="Refresh chats"
+          >
+            <RefreshCcw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          </Button>
+          <Button 
+            size="icon" 
+            variant="ghost" 
+            onClick={() => router.push('/settings')} 
+            title="Settings"
+          >
             <Settings className="h-4 w-4" />
           </Button>
-          <Button size="icon" variant="secondary" onClick={createChat} disabled={loading}>
+          <Button 
+            size="icon" 
+            variant="secondary" 
+            onClick={createChat} 
+            disabled={loading}
+          >
             <Plus className="h-4 w-4" />
           </Button>
         </div>
       </div>
 
-      <ScrollArea className="flex-1 pr-1">
+      <div className="flex-1 overflow-auto pr-1">
         {sortedGroups.map((group) => (
           <div key={group.title} className="mb-3">
             <h3 className="text-sm font-medium text-muted-foreground mb-1 px-2">
@@ -148,7 +184,7 @@ export function ChatSidebar() {
             No chats yet – create one!
           </p>
         )}
-      </ScrollArea>
+      </div>
     </aside>
   );
 } 
