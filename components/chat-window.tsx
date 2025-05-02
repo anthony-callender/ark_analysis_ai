@@ -232,6 +232,16 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
     }
   };
 
+  // Handle keyboard shortcuts
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Submit on Enter without shift key
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleFormSubmit(e);
+    }
+    // Allow new line with Shift+Enter (default behavior)
+  };
+
   return (
     <Card className="w-full h-full flex flex-col border-0 rounded-none overflow-hidden relative">
       <CardContent className="absolute inset-0 p-0 flex flex-col">
@@ -361,6 +371,7 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder={isMainPage ? "Select a chat to start messaging..." : "Type a message…"}
               rows={1}
               className="flex-1 resize-none"
