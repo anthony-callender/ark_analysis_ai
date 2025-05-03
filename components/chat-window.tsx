@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Send } from "lucide-react";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import { Message } from "ai";
 import { useChat } from "@ai-sdk/react";
 import { useAppState } from "@/state";
@@ -23,6 +23,108 @@ export interface ChatWindowProps {
   chatId?: string;
 }
 
+// Memoized message component to prevent unnecessary re-renders
+const ChatMessage = memo(({ 
+  message, 
+  sqlResults, 
+  handleSetSqlResult, 
+  connectionString, 
+  isLoading, 
+  getSqlResultKey 
+}: { 
+  message: Message, 
+  sqlResults: Record<string, any>, 
+  handleSetSqlResult: (key: string, result: any) => void, 
+  connectionString: string, 
+  isLoading: boolean,
+  getSqlResultKey: (content: string, messageId: string) => string
+}) => {
+  const messageContent = useMemo(() => message.content, [message.content]);
+  const messageRole = useMemo(() => message.role, [message.role]);
+  const messageId = useMemo(() => message.id, [message.id]);
+
+  if (messageRole === "user") {
+    return (
+      <div className="flex justify-end">
+        <span className="text-base leading-relaxed break-words max-w-xs md:max-w-md lg:max-w-xl rounded-2xl px-4 py-2 shadow bg-primary text-primary-foreground">
+          {messageContent}
+        </span>
+      </div>
+    );
+  }
+
+  // Memoize markdown components to prevent recreation on each render
+  const markdownComponents = useMemo(() => ({
+    code: ({ className, children }: any) => {
+      const language = className?.includes('sql') ? 'sql' : 'markup';
+      const content = children?.toString() || '';
+      const sqlResultKey = getSqlResultKey(content, messageId);
+      
+      return (
+        <CodeBlock
+          connectionString={connectionString}
+          isDisabled={isLoading}
+          language={language}
+          sqlResult={sqlResults[sqlResultKey]}
+          setSqlResult={(result) => handleSetSqlResult(sqlResultKey, result)}
+          autoRun={language === 'sql'}
+        >
+          {children}
+        </CodeBlock>
+      );
+    },
+    li: ({ children }: any) => <li className="my-1">{children}</li>,
+    ul: ({ children }: any) => <ul className="list-disc pl-4 my-1">{children}</ul>,
+    table: ({ children }: any) => (
+      <div className="my-3"><Table>{children}</Table></div>
+    ),
+    thead: ({ children }: any) => <TableHeader>{children}</TableHeader>,
+    tbody: ({ children }: any) => <TableBody>{children}</TableBody>,
+    tr: ({ children }: any) => <TableRow>{children}</TableRow>,
+    th: ({ children }: any) => <TableHead>{children}</TableHead>,
+    td: ({ children }: any) => <TableCell>{children}</TableCell>,
+  }), [connectionString, isLoading, sqlResults, handleSetSqlResult, messageId, getSqlResultKey]);
+
+  return (
+    <div className="text-base prose prose-neutral dark:prose-invert max-w-none">
+      <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        {messageContent}
+      </Markdown>
+    </div>
+  );
+}, (prevProps, nextProps) => {
+  // Custom equality check to prevent unnecessary re-renders
+  if (prevProps.message.id !== nextProps.message.id) return false;
+  if (prevProps.message.content !== nextProps.message.content) return false;
+  if (prevProps.isLoading !== nextProps.isLoading) return false;
+  
+  // Check if SQL results have changed for this message
+  if (prevProps.message.role === 'assistant') {
+    const prevContent = prevProps.message.content;
+    const nextContent = nextProps.message.content;
+    
+    // Only deep compare if content contains SQL
+    if (prevContent.includes('```sql') && prevContent === nextContent) {
+      // Check if relevant SQL results have changed
+      const sqlMatches = prevContent.match(/```sql\s+([\s\S]*?)\s+```/g) || [];
+      for (const sqlMatch of sqlMatches) {
+        const sqlContent = sqlMatch.replace(/```sql\s+|\s+```/g, '').trim();
+        const key = prevProps.getSqlResultKey(sqlContent, prevProps.message.id);
+        
+        const prevResult = prevProps.sqlResults[key];
+        const nextResult = nextProps.sqlResults[key];
+        
+        // If result changed, allow re-render
+        if (JSON.stringify(prevResult) !== JSON.stringify(nextResult)) {
+          return false;
+        }
+      }
+    }
+  }
+  
+  return true;
+});
+
 export function ChatWindow({ user, chatId }: ChatWindowProps) {
   const { setChat, chat: chatState, clearChat } = useAppState();
   const { value } = useAppLocalStorage();
@@ -31,15 +133,28 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
   const { persistChat } = useChatPersistence();
   const [input, setInput] = useState("");
   
-  // SQL results state
+  // SQL results cache with stable reference
   const [sqlResults, setSqlResults] = useState<Record<string, any>>({});
+  
+  // Stable key generation with referential stability
+  const getSqlResultKey = useCallback((content: string, messageId: string) => {
+    // Create a stable, deterministic key from the SQL content and message ID
+    const normalizedContent = content.trim().replace(/\s+/g, ' ');
+    return `${messageId}_${normalizedContent}`;
+  }, []);
   
   // Check if we're on the main /app page without a specific chat
   const isMainPage = !chatId;
   
-  // Scroll to bottom when messages change
+  // Scroll to bottom when messages change - with debouncing
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (!endRef.current) return;
+    
+    const timeoutId = setTimeout(() => {
+      endRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+    
+    return () => clearTimeout(timeoutId);
   }, [chatState?.messages]);
   
   // Callback functions for useChat hook
@@ -71,13 +186,23 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
     });
   }, [toast]);
   
-  // Handler for SQL result
+  // Optimized SQL result handler with memoization and throttling
   const handleSetSqlResult = useCallback(
     (messageId: string, result: any) => {
-      setSqlResults((prev) => ({
-        ...prev,
-        [messageId]: result,
-      }));
+      // Use a stable version of requestAnimationFrame that won't cause loops
+      if (typeof window !== 'undefined') {
+        window.cancelAnimationFrame(window.requestAnimationFrame(() => {}));
+        window.requestAnimationFrame(() => {
+          setSqlResults((prev) => {
+            // Deep equality check to prevent unnecessary updates
+            const prevResult = prev[messageId];
+            if (prevResult && JSON.stringify(prevResult) === JSON.stringify(result)) {
+              return prev;
+            }
+            return { ...prev, [messageId]: result };
+          });
+        });
+      }
     },
     []
   );
@@ -269,82 +394,34 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
               </div>
             )}
             
-            {!isMainPage && messages.map((m) => (
-              <motion.div
-                key={m.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="w-full"
-              >
-                {m.role === "user" ? (
-                  <div className="flex justify-end">
-                    <span className="text-base leading-relaxed break-words max-w-xs md:max-w-md lg:max-w-xl rounded-2xl px-4 py-2 shadow bg-primary text-primary-foreground">
-                      {m.content}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="text-base prose prose-neutral dark:prose-invert max-w-none">
-                    <Markdown
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        code: ({ className, children }) => {
-                          const language = className?.includes('sql')
-                            ? 'sql'
-                            : 'markup';
-                          return (
-                            <CodeBlock
-                              connectionString={value.connectionString}
-                              isDisabled={isLoading}
-                              language={language}
-                              sqlResult={
-                                sqlResults[`${children?.toString()}_${m.id}`]
-                              }
-                              setSqlResult={(result) =>
-                                handleSetSqlResult(
-                                  `${children?.toString()}_${m.id}`,
-                                  result
-                                )
-                              }
-                              autoRun={language === 'sql'}
-                            >
-                              {children}
-                            </CodeBlock>
-                          );
-                        },
-                        li: ({ children }) => (
-                          <li className="my-1">{children}</li>
-                        ),
-                        ul: ({ children }) => (
-                          <ul className="list-disc pl-4 my-1">{children}</ul>
-                        ),
-                        table: ({ children }) => (
-                          <div className="my-3">
-                            <Table>{children}</Table>
-                          </div>
-                        ),
-                        thead: ({ children }) => (
-                          <TableHeader>{children}</TableHeader>
-                        ),
-                        tbody: ({ children }) => (
-                          <TableBody>{children}</TableBody>
-                        ),
-                        tr: ({ children }) => (
-                          <TableRow>{children}</TableRow>
-                        ),
-                        th: ({ children }) => (
-                          <TableHead>{children}</TableHead>
-                        ),
-                        td: ({ children }) => (
-                          <TableCell>{children}</TableCell>
-                        ),
-                      }}
-                    >
-                      {m.content}
-                    </Markdown>
-                  </div>
-                )}
-              </motion.div>
-            ))}
+            <AnimatePresence mode="wait">
+              {!isMainPage && messages.map((m) => {
+                // Create stable message key
+                const messageKey = `${m.id}-${m.role}`;
+                
+                return (
+                  <motion.div
+                    key={messageKey}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    layout="position"
+                    layoutId={messageKey}
+                    className="w-full"
+                  >
+                    <ChatMessage 
+                      message={m}
+                      sqlResults={sqlResults}
+                      handleSetSqlResult={handleSetSqlResult}
+                      connectionString={value.connectionString || ''}
+                      isLoading={isLoading}
+                      getSqlResultKey={getSqlResultKey}
+                    />
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
             
             {isLoading && messages.length > 0 && messages[messages.length - 1].role === "user" && (
               <motion.div

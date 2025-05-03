@@ -3,9 +3,35 @@
 import { Client } from 'pg'
 import { DIOCESE_CONFIG } from '@/config/diocese'
 
+// Cache to store recent query results and prevent redundant executions
+// Format: { queryKey: { result: string, timestamp: number } }
+const queryCache: Record<string, { result: string, timestamp: number }> = {}
+
+// Cache TTL in milliseconds (1 second)
+const CACHE_TTL = 1000
+
+// Generate a cache key for a query
+function generateCacheKey(sql: string, connectionString: string): string {
+  // Use only the first 50 chars of connection string to avoid leaking sensitive info in memory
+  const connStringSafe = connectionString.substring(0, 50)
+  return `${sql.trim()}_${connStringSafe}`
+}
+
 export async function runSql(sql: string, connectionString: string) {
   // Convert SQL to lowercase for case-insensitive checks
   const sqlLower = sql.trim().toLowerCase()
+  
+  // Generate cache key for this query
+  const cacheKey = generateCacheKey(sql, connectionString)
+  
+  // Check cache for recent identical query
+  const cachedResult = queryCache[cacheKey]
+  const now = Date.now()
+  
+  if (cachedResult && now - cachedResult.timestamp < CACHE_TTL) {
+    console.log('Using cached SQL result')
+    return cachedResult.result
+  }
 
   // 1. Security checks for dangerous operations
   if (
@@ -106,13 +132,35 @@ export async function runSql(sql: string, connectionString: string) {
     await client.connect()
     const result = await client.query(sql)
     await client.end()
-
-    return JSON.stringify(result)
+    
+    const resultString = JSON.stringify(result)
+    
+    // Cache the result
+    queryCache[cacheKey] = {
+      result: resultString,
+      timestamp: Date.now()
+    }
+    
+    // Clean up old cache entries every 100 queries
+    if (Object.keys(queryCache).length > 100) {
+      const keysToRemove = Object.entries(queryCache)
+        .filter(([_, value]) => now - value.timestamp > CACHE_TTL)
+        .map(([key]) => key)
+      
+      keysToRemove.forEach(key => delete queryCache[key])
+    }
+    
+    return resultString
   } catch (error) {
     await client.end()
-    if (error instanceof Error) {
-      return error.message
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    
+    // Cache errors too to prevent hammering the database with invalid queries
+    queryCache[cacheKey] = {
+      result: errorMessage,
+      timestamp: Date.now()
     }
-    return 'Unknown error'
+    
+    return errorMessage
   }
 }

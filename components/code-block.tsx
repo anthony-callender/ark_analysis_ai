@@ -1,7 +1,7 @@
 'use client'
 
 import { Check, Copy, BarChart3 } from 'lucide-react'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, memo } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { runSql } from '@/actions/run-sql'
@@ -28,7 +28,33 @@ const convertToResult = (rows: unknown[]): Result[] => {
   })
 }
 
-function CodeBlock({
+// Memoized result component to prevent re-renders
+const MemoizedSqlResult = memo(({ result }: { result: QueryResult<unknown[]> | string }) => {
+  return <SqlResult result={result} />;
+});
+
+// Memoized chart button
+const ChartButton = memo(({ onClick, disabled }: { onClick: () => void, disabled: boolean }) => {
+  return (
+    <Button
+      size={'sm'}
+      variant={'outline'}
+      onClick={onClick}
+      disabled={disabled}
+      className="flex items-center gap-2"
+    >
+      <BarChart3 className="w-4 h-4" />
+      Show Chart
+    </Button>
+  );
+});
+
+// Maintain a global map of in-flight SQL requests to avoid duplicates
+// This exists outside component state to persist across renders
+const pendingRequests = new Map<string, Promise<any>>();
+
+// Main component with memoization to prevent unnecessary re-renders
+const CodeBlock = memo(function CodeBlock({
   children,
   language,
   sqlResult,
@@ -45,15 +71,69 @@ function CodeBlock({
   connectionString: string
   autoRun?: boolean
 }) {
+  // Use refs to track the mounted state and prevent memory leaks
+  const isMountedRef = useRef(true);
+  const animationFrameRef = useRef<number | null>(null);
+  
   useEffect(() => {
-    Prism.highlightAll()
-  }, [])
+    // Set mounted flag
+    isMountedRef.current = true;
+    
+    // Clear any pending animation frames
+    return () => {
+      isMountedRef.current = false;
+      if (animationFrameRef.current !== null) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    // Use a stable timer to highlight code only once per render cycle
+    const timer = setTimeout(() => {
+      if (isMountedRef.current) {
+        Prism.highlightAll();
+      }
+    }, 0);
+    
+    return () => clearTimeout(timer);
+  }, [children]);
 
   const [copied, setCopied] = useState(false)
   const [showChart, setShowChart] = useState(false)
   const [chartConfig, setChartConfig] = useState<Config | null>(null)
   const [isChartLoading, setIsChartLoading] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [hasRun, setHasRun] = useState(false)
+  // Create stable run ID that doesn't change on re-renders
+  const runIdRef = useRef<string>(`${Date.now()}_${Math.random().toString(36).substring(2, 11)}`)
+  const queryRef = useRef<string | null>(null)
+  // Track visible loading state separately to avoid flashing
+  const [visibleLoading, setVisibleLoading] = useState(false);
+  
+  // Delayed loading indicator to prevent flashing on quick responses
+  useEffect(() => {
+    let loadingTimer: NodeJS.Timeout | null = null;
+    
+    if (isLoading) {
+      loadingTimer = setTimeout(() => {
+        if (isMountedRef.current && isLoading) {
+          setVisibleLoading(true);
+        }
+      }, 300); // Only show loading state after 300ms
+    } else {
+      setVisibleLoading(false);
+    }
+    
+    return () => {
+      if (loadingTimer) clearTimeout(loadingTimer);
+    };
+  }, [isLoading]);
+
+  // Generate a stable request ID for deduplication
+  const getRequestId = useCallback((query: string) => {
+    return `${query.trim()}_${connectionString.substring(0, 50)}`;
+  }, [connectionString]);
 
   const run = useCallback(async () => {
     if (!children?.toString()) {
@@ -63,29 +143,136 @@ function CodeBlock({
       })
       return
     }
-    setIsLoading(true)
+    
+    const query = children?.toString();
+    
+    // Skip if we've already run this exact query
+    if (queryRef.current === query && hasRun) {
+      return;
+    }
+    
+    // Generate request ID for deduplication
+    const requestId = getRequestId(query);
+    
+    // If this exact request is already in flight, wait for it instead of creating a new one
+    if (pendingRequests.has(requestId)) {
+      console.log('Reusing in-flight SQL request');
+      try {
+        // Wait for the existing request
+        const result = await pendingRequests.get(requestId);
+        if (isMountedRef.current) {
+          queryRef.current = query;
+          setHasRun(true);
+          setSqlResult?.(result);
+        }
+      } catch (error) {
+        console.error('Error from shared request:', error);
+      }
+      return;
+    }
+    
+    queryRef.current = query;
+    setIsLoading(true);
+    setHasRun(true);
 
-    const sqlFunctionBinded = runSql.bind(
-      null,
-      children?.toString(),
-      connectionString
-    )
-    const result = await sqlFunctionBinded()
+    // Store current runId to check if this run is still relevant when it completes
+    const currentRunId = runIdRef.current;
+    
+    // Create the request promise
+    const requestPromise = (async () => {
+      try {
+        const sqlFunctionBinded = runSql.bind(
+          null,
+          query,
+          connectionString
+        );
+        const result = await sqlFunctionBinded();
+        
+        try {
+          return JSON.parse(result);
+        } catch {
+          return result;
+        }
+      } catch (error) {
+        console.error('SQL execution error:', error);
+        throw error;
+      } finally {
+        // Remove from pending requests when done
+        setTimeout(() => {
+          pendingRequests.delete(requestId);
+        }, 50);
+      }
+    })();
+    
+    // Store the request
+    pendingRequests.set(requestId, requestPromise);
+
     try {
-      const parsedResult = JSON.parse(result)
-      setSqlResult?.(parsedResult)
-    } catch {
-      setSqlResult?.(result)
+      // Check if component still mounted and wants this result
+      if (!isMountedRef.current || currentRunId !== runIdRef.current) {
+        return;
+      }
+      
+      const result = await requestPromise;
+      
+      // Use requestAnimationFrame to batch updates and prevent flashing
+      animationFrameRef.current = requestAnimationFrame(() => {
+        if (!isMountedRef.current) return;
+        
+        setSqlResult?.(result);
+        
+        // Delay loading state removal slightly to avoid flashing
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            setIsLoading(false);
+          }
+        }, 50);
+      });
+    } catch (error) {
+      console.error('SQL execution error:', error);
+      
+      // Show toast only if this is the current run and component is mounted
+      if (isMountedRef.current && currentRunId === runIdRef.current) {
+        toast({
+          title: 'SQL Execution Error',
+          description: error instanceof Error ? error.message : 'Failed to execute SQL query',
+          variant: 'destructive',
+        });
+        
+        // Set loading to false with slight delay
+        setTimeout(() => {
+          if (isMountedRef.current) {
+            setIsLoading(false);
+          }
+        }, 50);
+      }
     }
+  }, [children, connectionString, setSqlResult, hasRun, getRequestId]);
 
-    setIsLoading(false)
-  }, [children, connectionString, setSqlResult])
-
+  // Effect to handle auto-running SQL queries - with proper clean up
   useEffect(() => {
-    if (language === 'sql' && autoRun && !sqlResult && !isDisabled && children?.toString()) {
-      run()
+    // Reset run status when query changes
+    if (children?.toString() !== queryRef.current) {
+      setHasRun(false);
+      runIdRef.current = `${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
     }
-  }, [language, children, isDisabled, sqlResult, autoRun, run])
+    
+    let runTimer: NodeJS.Timeout | null = null;
+    
+    // Only auto-run when needed and not already processed
+    if (language === 'sql' && autoRun && !hasRun && !isDisabled && children?.toString()) {
+      // Small delay to batch UI updates and prevent flashing
+      runTimer = setTimeout(() => {
+        if (isMountedRef.current) {
+          run();
+        }
+      }, 100);
+    }
+    
+    return () => {
+      if (runTimer) clearTimeout(runTimer);
+    };
+  }, [language, children, isDisabled, autoRun, run, hasRun]);
 
   const copyToClipboard = async () => {
     try {
@@ -121,6 +308,7 @@ function CodeBlock({
     setIsChartLoading(false)
   }
 
+  // For inline code blocks - return fast
   if (
     language !== 'sql' &&
     typeof children === 'string' &&
@@ -153,24 +341,19 @@ function CodeBlock({
           <code className={`language-${language ?? 'markup'}`}>{children}</code>
         </pre>
       </div>
-      {isLoading ? (
+      
+      {visibleLoading ? (
         <div className="w-full h-32 bg-primary opacity-20 rounded-md animate-pulse" />
       ) : sqlResult ? (
         <>
-          <SqlResult result={sqlResult} />
+          <MemoizedSqlResult result={sqlResult} />
           {typeof sqlResult !== 'string' && sqlResult.rows?.length > 0 && (
             <>
               {!showChart && (
-                <Button
-                  size={'sm'}
-                  variant={'outline'}
-                  onClick={handleShowChart}
-                  disabled={isChartLoading}
-                  className="flex items-center gap-2"
-                >
-                  <BarChart3 className="w-4 h-4" />
-                  Show Chart
-                </Button>
+                <ChartButton 
+                  onClick={handleShowChart} 
+                  disabled={isChartLoading} 
+                />
               )}
               {showChart && chartConfig && (
                 <div className="mt-4">
@@ -187,17 +370,17 @@ function CodeBlock({
 
       {language === 'sql' && !autoRun && (
         <Button
-          disabled={isDisabled}
-          aria-disabled={isDisabled}
+          disabled={isDisabled || isLoading}
+          aria-disabled={isDisabled || isLoading}
           size={'sm'}
           variant={'outline'}
           onClick={run}
         >
-          Run SQL
+          {isLoading ? 'Running...' : 'Run SQL'}
         </Button>
       )}
     </div>
   )
-}
+});
 
-export default CodeBlock
+export default CodeBlock;
