@@ -94,7 +94,12 @@ export async function runSql(sql: string, connectionString: string) {
       sqlLower.includes(`diocese_id = ${DIOCESE_CONFIG.id}`) || 
       sqlLower.includes(`diocese_id=${DIOCESE_CONFIG.id}`) ||
       sqlLower.includes(`tc.diocese_id = ${DIOCESE_CONFIG.id}`) ||
-      sqlLower.includes(`tc.diocese_id=${DIOCESE_CONFIG.id}`)
+      sqlLower.includes(`tc.diocese_id=${DIOCESE_CONFIG.id}`) ||
+      // Add support for filtering by diocese name
+      sqlLower.includes(`name = '${DIOCESE_CONFIG.fullName.toLowerCase()}'`) ||
+      sqlLower.includes(`name='${DIOCESE_CONFIG.fullName.toLowerCase()}'`) ||
+      sqlLower.includes(`d.name = '${DIOCESE_CONFIG.fullName.toLowerCase()}'`) ||
+      sqlLower.includes(`d.name='${DIOCESE_CONFIG.fullName.toLowerCase()}'`)
 
     // Check for proper testing center filter
     const hasTestingCenterFilter = 
@@ -108,13 +113,13 @@ export async function runSql(sql: string, connectionString: string) {
       // Diocese managers only need diocese filter
       if (DIOCESE_CONFIG.role === 'diocese_manager') {
         if (!hasDioceseFilter) {
-          return `Query must include diocese_id = ${DIOCESE_CONFIG.id} filter for security reasons`
+          return `Query must include either diocese_id = ${DIOCESE_CONFIG.id} OR name = '${DIOCESE_CONFIG.fullName}' filter for security reasons`
         }
       } 
       // School managers need both filters
       else {
         if (!hasDioceseFilter) {
-          return `Query must include diocese_id = ${DIOCESE_CONFIG.id} filter for security reasons`
+          return `Query must include either diocese_id = ${DIOCESE_CONFIG.id} OR name = '${DIOCESE_CONFIG.fullName}' filter for security reasons`
         }
         if (!hasTestingCenterFilter) {
           return `Query must include testing_center_id = ${DIOCESE_CONFIG.testingCenterId} filter for security reasons`
