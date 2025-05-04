@@ -210,7 +210,7 @@ export default function ChatInterfaceModern({
                           transition={{ duration: 0.3 }}
                           className="flex justify-end"
                         >
-                          <span className="text-base leading-relaxed break-words max-w-xs md:max-w-md lg:max-w-lg rounded-2xl px-4 py-2 bg-gradient-to-r from-primary-500 to-secondary-500 text-white">
+                          <span className="text-base leading-relaxed break-words max-w-xs md:max-w-md lg:max-w-lg rounded-2xl px-4 py-2 bg-gradient-to-r from-primary-500 to-white text-primary-950">
                             {message.content}
                           </span>
                         </motion.div>

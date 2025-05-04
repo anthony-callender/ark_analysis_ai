@@ -108,7 +108,7 @@
   
   /* Gradient border */
   .gradient-border {
-    @apply relative before:absolute before:inset-0 before:-z-10 before:rounded-xl before:p-0.5 before:bg-gradient-to-r before:from-primary-500/20 before:via-secondary-500/20 before:to-primary-500/20;
+    @apply relative before:absolute before:inset-0 before:-z-10 before:rounded-xl before:p-0.5 before:bg-gradient-to-r before:from-primary-500/20 before:via-white/20 before:to-primary-500/20;
   }
   
   /* Background gradients */
@@ -118,7 +118,7 @@
   
   /* Button gradient */
   .btn-gradient {
-    @apply bg-gradient-to-r from-primary-500 to-secondary-500 hover:from-primary-600 hover:to-secondary-600 text-white;
+    @apply bg-gradient-to-r from-primary-500 to-white hover:from-primary-600 hover:to-white/90 text-primary-950;
   }
   
   /* Avatar gradient */

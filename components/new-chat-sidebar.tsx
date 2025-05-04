@@ -49,7 +49,7 @@ export function NewChatSidebar() {
   
   return (
     <Button 
-      className="w-full btn-gradient shadow-md rounded-xl gap-2 transition-all hover:shadow-lg mb-4" 
+      className="w-full btn-gradient shadow-md rounded-xl gap-2 transition-all hover:shadow-lg mb-4 text-primary-950" 
       size="lg" 
       onClick={handleClick}
       disabled={isCreating}

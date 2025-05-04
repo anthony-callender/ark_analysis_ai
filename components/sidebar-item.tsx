@@ -109,7 +109,7 @@ export function SidebarItem({ chat, active, onSelect }: SidebarItemProps) {
       transition={{ type: 'spring', damping: 30, stiffness: 300 }}
       className={`group flex items-center justify-between rounded-xl px-3 py-2 cursor-pointer text-sm
         ${active 
-          ? "bg-gradient-to-r from-primary-500 to-secondary-500 text-white shadow-md" 
+          ? "bg-gradient-to-r from-primary-500 to-white text-primary-950 shadow-md" 
           : "hover:sidebar-item-gradient text-white/80 hover:text-white glass-panel"}`}
       onClick={!editing ? onSelect : undefined}
     >
