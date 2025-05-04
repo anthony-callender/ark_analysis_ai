@@ -106,8 +106,11 @@ export function SidebarItem({ chat, active, onSelect }: SidebarItemProps) {
     <motion.li
       initial={{ opacity: 0, y: 5 }}
       animate={{ opacity: 1, y: 0 }}
-      className={`group flex items-center justify-between rounded-md px-2 py-1 cursor-pointer text-sm
-        ${active ? "bg-primary text-primary-foreground" : "hover:bg-secondary/60"}`}
+      transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+      className={`group flex items-center justify-between rounded-xl px-3 py-2 cursor-pointer text-sm
+        ${active 
+          ? "bg-gradient-to-r from-primary-500 to-secondary-500 text-white shadow-md" 
+          : "hover:sidebar-item-gradient text-white/80 hover:text-white glass-panel"}`}
       onClick={!editing ? onSelect : undefined}
     >
       {editing ? (
@@ -122,16 +125,16 @@ export function SidebarItem({ chat, active, onSelect }: SidebarItemProps) {
             ref={inputRef}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className="h-7 px-2 text-sm"
+            className="h-7 px-2 text-sm bg-white/10 border-white/10 text-white"
           />
-          <Button size="icon" type="submit" variant="ghost" className="h-7 w-7">
+          <Button size="icon" type="submit" variant="ghost" className="h-7 w-7 text-white hover:bg-white/10">
             <Check className="h-4 w-4" />
           </Button>
           <Button
             size="icon"
             variant="ghost"
             onClick={handleCancel}
-            className="h-7 w-7"
+            className="h-7 w-7 text-white hover:bg-white/10"
           >
             <X className="h-4 w-4" />
           </Button>
@@ -150,7 +153,7 @@ export function SidebarItem({ chat, active, onSelect }: SidebarItemProps) {
                 e.stopPropagation();
                 setEditing(true);
               }}
-              className="h-7 w-7"
+              className="h-7 w-7 text-white hover:bg-white/10"
             >
               <Edit3 className="h-4 w-4" />
             </Button>
@@ -159,7 +162,7 @@ export function SidebarItem({ chat, active, onSelect }: SidebarItemProps) {
               variant="ghost" 
               onClick={handleDelete}
               disabled={isDeleting}
-              className="h-7 w-7"
+              className="h-7 w-7 text-white hover:bg-white/10"
             >
               <Trash2 className="h-4 w-4" />
             </Button>

@@ -163,9 +163,9 @@ export default function ChatInterfaceModern({
   }, [messages]);
 
   return (
-    <div className="flex flex-col h-full w-full">
+    <div className="flex flex-col h-full w-full bg-gradient-subtle">
       {showNavbar && (
-        <header className="border-b w-full">
+        <header className="border-b w-full glass-panel">
           <div className="flex h-16 items-center px-4 justify-between">
             <div className="flex items-center gap-2">
               <Menu className="h-5 w-5" />
@@ -174,7 +174,7 @@ export default function ChatInterfaceModern({
             <div className="flex items-center">
               <div className="flex items-center gap-2">
                 <span className="text-sm">{user.email}</span>
-                <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground">
+                <div className="h-8 w-8 rounded-full avatar-gradient flex items-center justify-center text-primary-foreground">
                   <UserIcon className="h-4 w-4" />
                 </div>
               </div>
@@ -184,7 +184,7 @@ export default function ChatInterfaceModern({
       )}
       
       <div className="flex-1 overflow-hidden w-full">
-        <Card className="w-full h-full flex flex-col border-0 rounded-none">
+        <Card className="w-full h-full flex flex-col border-0 rounded-none bg-transparent shadow-none">
           <CardContent className="flex-1 p-0 flex flex-col h-full">
             {/* Message list */}
             <ScrollArea className="flex-1 p-4 md:p-6">
@@ -198,7 +198,7 @@ export default function ChatInterfaceModern({
                   {displayMessages.map((message) => (
                     <motion.div
                       key={message.id}
-                      initial={{ opacity: 0, y: 20 }}
+                      initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.3 }}
                       className="w-full"
@@ -210,7 +210,7 @@ export default function ChatInterfaceModern({
                           transition={{ duration: 0.3 }}
                           className="flex justify-end"
                         >
-                          <span className="text-base leading-relaxed break-words max-w-xs md:max-w-md lg:max-w-lg rounded-2xl px-4 py-2 shadow bg-primary text-primary-foreground">
+                          <span className="text-base leading-relaxed break-words max-w-xs md:max-w-md lg:max-w-lg rounded-2xl px-4 py-2 bg-gradient-to-r from-primary-500 to-secondary-500 text-white">
                             {message.content}
                           </span>
                         </motion.div>
@@ -219,7 +219,7 @@ export default function ChatInterfaceModern({
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           transition={{ duration: 0.4 }}
-                          className="text-base prose prose-neutral dark:prose-invert max-w-none"
+                          className="text-base prose prose-neutral dark:prose-invert max-w-none glass-panel rounded-xl p-4"
                         >
                           <Markdown
                             remarkPlugins={[remarkGfm]}
@@ -336,19 +336,25 @@ export default function ChatInterfaceModern({
             {/* Composer */}
             <form
               onSubmit={handleSubmit}
-              className="border-t p-4 flex space-x-2 max-w-6xl mx-auto w-full"
+              className="p-4 flex space-x-2 max-w-6xl mx-auto w-full"
             >
-              <Textarea
-                value={input}
-                onChange={handleInputChange}
-                placeholder="Type a message…"
-                rows={1}
-                className="flex-1 resize-none"
-                disabled={isLoading}
-              />
-              <Button type="submit" disabled={!input.trim() || isLoading} className="shrink-0">
-                <Send className="h-5 w-5" />
-              </Button>
+              <div className="w-full glass-panel rounded-xl p-1 flex space-x-2">
+                <Textarea
+                  value={input}
+                  onChange={handleInputChange}
+                  placeholder="Type a message…"
+                  rows={1}
+                  className="flex-1 resize-none border-0 focus-visible:ring-0 bg-transparent"
+                  disabled={isLoading}
+                />
+                <Button 
+                  type="submit" 
+                  disabled={!input.trim() || isLoading} 
+                  className="shrink-0 btn-gradient"
+                >
+                  <Send className="h-5 w-5" />
+                </Button>
+              </div>
             </form>
           </CardContent>
         </Card>

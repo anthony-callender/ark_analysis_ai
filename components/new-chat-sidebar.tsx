@@ -6,7 +6,7 @@ import { useChatPersistence } from '@/hooks/use-chat-persistence'
 import { v4 } from 'uuid'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Plus } from 'lucide-react'
 
 export function NewChatSidebar() {
   const setChat = useAppState((state) => state.setChat)
@@ -49,8 +49,7 @@ export function NewChatSidebar() {
   
   return (
     <Button 
-      variant="ghost" 
-      className="w-full" 
+      className="w-full btn-gradient shadow-md rounded-xl gap-2 transition-all hover:shadow-lg mb-4" 
       size="lg" 
       onClick={handleClick}
       disabled={isCreating}
@@ -61,7 +60,10 @@ export function NewChatSidebar() {
           Creating Chat...
         </span>
       ) : (
-        'New Chat'
+        <>
+          <Plus className="h-5 w-5" />
+          <span>New Chat</span>
+        </>
       )}
     </Button>
   )

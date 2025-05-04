@@ -31,12 +31,26 @@ const config = {
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',
   			primary: {
+          50: '#eff6ff',   // Light blue background
+          100: '#dbeafe',  // Lighter blue accents
+          500: '#3b82f6',  // Main blue
+          600: '#2563eb',  // Darker blue for hover
+          900: '#1e3a8a',  // Dark blue for dark mode
+          950: '#172554',  // Deepest blue for dark mode
   				DEFAULT: 'hsl(var(--primary))',
   				foreground: 'hsl(var(--primary-foreground))'
   			},
   			secondary: {
+          500: '#8b5cf6',  // Purple for gradients
+          600: '#7c3aed',  // Darker purple for hover
   				DEFAULT: 'hsl(var(--secondary))',
   				foreground: 'hsl(var(--secondary-foreground))'
+  			},
+  			neutral: {
+          50: '#f9fafb',   // Light background
+          200: '#e5e7eb',  // Borders light
+          800: '#1f2937',  // Dark mode elements
+          900: '#111827',  // Dark mode background
   			},
   			destructive: {
   				DEFAULT: 'hsl(var(--destructive))',

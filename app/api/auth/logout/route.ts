@@ -4,7 +4,7 @@ import { getSessionCookie, deleteSessionCookie, deleteSession } from '@/utils/au
 
 export async function POST() {
   try {
-    const token = getSessionCookie()
+    const token = await getSessionCookie()
     if (!token) {
       return NextResponse.json({ message: 'Not logged in' }, { status: 401 })
     }

@@ -128,8 +128,8 @@ export function ChatSidebar() {
   }, [chats]);
 
   return (
-    <aside className="w-64 border-r p-2 flex flex-col bg-background h-full relative">
-      <div className="flex items-center justify-between mb-2 px-2 sticky top-0 bg-background z-10">
+    <aside className="w-64 border-r p-2 flex flex-col h-full relative bg-gradient-to-br from-primary-900 via-primary-950 to-primary-900 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-800 text-white">
+      <div className="flex items-center justify-between mb-4 px-2 sticky top-0 z-10 backdrop-blur-sm bg-primary-900/40 dark:bg-neutral-900/50 py-2 rounded-lg">
         <h2 className="font-semibold text-lg">Chats</h2>
         <div className="flex gap-1">
           <Button 
@@ -138,6 +138,7 @@ export function ChatSidebar() {
             onClick={handleManualRefresh} 
             disabled={refreshing}
             title="Refresh chats"
+            className="text-white hover:bg-white/10"
           >
             <RefreshCcw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
           </Button>
@@ -146,27 +147,28 @@ export function ChatSidebar() {
             variant="ghost" 
             onClick={() => router.push('/settings')} 
             title="Settings"
+            className="text-white hover:bg-white/10"
           >
             <Settings className="h-4 w-4" />
           </Button>
           <Button 
-            size="icon" 
-            variant="secondary" 
+            size="icon"
             onClick={createChat} 
             disabled={loading}
+            className="btn-gradient"
           >
             <Plus className="h-4 w-4" />
           </Button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto pr-1">
+      <ScrollArea className="flex-1 pr-1">
         {sortedGroups.map((group) => (
           <div key={group.title} className="mb-3">
-            <h3 className="text-sm font-medium text-muted-foreground mb-1 px-2">
+            <h3 className="text-sm font-medium text-white/70 mb-2 px-2">
               {group.title}
             </h3>
-            <ul className="space-y-1">
+            <ul className="space-y-2">
               {group.chats.map((chat) => (
                 <SidebarItem
                   key={chat.id}
@@ -180,11 +182,13 @@ export function ChatSidebar() {
         ))}
         
         {chats.length === 0 && (
-          <p className="text-sm text-muted-foreground px-2 pt-4">
-            No chats yet – create one!
-          </p>
+          <div className="glass-panel rounded-lg p-4 mt-2 mx-2">
+            <p className="text-sm text-white/80">
+              No chats yet – create one!
+            </p>
+          </div>
         )}
-      </div>
+      </ScrollArea>
     </aside>
   );
 } 
