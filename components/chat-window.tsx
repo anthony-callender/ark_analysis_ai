@@ -17,6 +17,8 @@ import remarkGfm from "remark-gfm";
 import CodeBlock from "@/components/code-block";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { User } from "@supabase/supabase-js";
+import { Switch } from "@/components/ui/switch"
+import { Label } from "@/components/ui/label"
 
 export interface ChatWindowProps {
   user: User;
@@ -30,14 +32,16 @@ const ChatMessage = memo(({
   handleSetSqlResult, 
   connectionString, 
   isLoading, 
-  getSqlResultKey 
+  getSqlResultKey,
+  showSQL
 }: { 
   message: Message, 
   sqlResults: Record<string, any>, 
   handleSetSqlResult: (key: string, result: any) => void, 
   connectionString: string, 
   isLoading: boolean,
-  getSqlResultKey: (content: string, messageId: string) => string
+  getSqlResultKey: (content: string, messageId: string) => string,
+  showSQL: boolean
 }) => {
   const messageContent = useMemo(() => message.content, [message.content]);
   const messageRole = useMemo(() => message.role, [message.role]);
@@ -60,6 +64,7 @@ const ChatMessage = memo(({
       const content = children?.toString() || '';
       const sqlResultKey = getSqlResultKey(content, messageId);
       
+      // Instead of returning null, set showSqlCode based on showSQL
       return (
         <CodeBlock
           connectionString={connectionString}
@@ -68,6 +73,7 @@ const ChatMessage = memo(({
           sqlResult={sqlResults[sqlResultKey]}
           setSqlResult={(result) => handleSetSqlResult(sqlResultKey, result)}
           autoRun={language === 'sql'}
+          showSqlCode={language !== 'sql' || showSQL}
         >
           {children}
         </CodeBlock>
@@ -83,7 +89,7 @@ const ChatMessage = memo(({
     tr: ({ children }: any) => <TableRow>{children}</TableRow>,
     th: ({ children }: any) => <TableHead>{children}</TableHead>,
     td: ({ children }: any) => <TableCell>{children}</TableCell>,
-  }), [connectionString, isLoading, sqlResults, handleSetSqlResult, messageId, getSqlResultKey]);
+  }), [connectionString, isLoading, sqlResults, handleSetSqlResult, messageId, getSqlResultKey, showSQL]);
 
   return (
     <div className="text-base prose prose-neutral dark:prose-invert max-w-none">
@@ -97,6 +103,7 @@ const ChatMessage = memo(({
   if (prevProps.message.id !== nextProps.message.id) return false;
   if (prevProps.message.content !== nextProps.message.content) return false;
   if (prevProps.isLoading !== nextProps.isLoading) return false;
+  if (prevProps.showSQL !== nextProps.showSQL) return false;
   
   // Check if SQL results have changed for this message
   if (prevProps.message.role === 'assistant') {
@@ -367,6 +374,10 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
     // Allow new line with Shift+Enter (default behavior)
   };
 
+  // Add showSQL state from application store
+  const showSQL = useAppState((state) => state.showSQL)
+  const setShowSQL = useAppState((state) => state.setShowSQL)
+
   return (
     <Card className="w-full h-full flex flex-col border-0 rounded-none overflow-hidden relative">
       <CardContent className="absolute inset-0 p-0 flex flex-col">
@@ -417,6 +428,7 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
                       connectionString={value.connectionString || ''}
                       isLoading={isLoading}
                       getSqlResultKey={getSqlResultKey}
+                      showSQL={showSQL}
                     />
                   </motion.div>
                 );
@@ -442,7 +454,7 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
 
         <form
           onSubmit={handleFormSubmit}
-          className="border-t p-4 flex space-x-2 w-full sticky bottom-0 bg-background"
+          className="border-t p-4 flex flex-col space-y-2 w-full sticky bottom-0 bg-background"
         >
           <div className="max-w-4xl w-full mx-auto flex gap-2">
             <Textarea
@@ -461,6 +473,19 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
             >
               <Send className="h-5 w-5" />
             </Button>
+          </div>
+          
+          <div className="flex items-center max-w-4xl mx-auto w-full justify-between">
+            <div className="flex items-center space-x-2">
+              <Switch 
+                id="show-sql"
+                checked={showSQL}
+                onCheckedChange={setShowSQL}
+              />
+              <Label htmlFor="show-sql" className="text-sm text-muted-foreground">
+                Show SQL
+              </Label>
+            </div>
           </div>
         </form>
       </CardContent>

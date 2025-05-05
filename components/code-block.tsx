@@ -62,6 +62,7 @@ const CodeBlock = memo(function CodeBlock({
   isDisabled,
   connectionString,
   autoRun = true,
+  showSqlCode = true,
 }: {
   children: React.ReactNode
   language?: string
@@ -70,6 +71,7 @@ const CodeBlock = memo(function CodeBlock({
   isDisabled?: boolean
   connectionString: string
   autoRun?: boolean
+  showSqlCode?: boolean
 }) {
   // Use refs to track the mounted state and prevent memory leaks
   const isMountedRef = useRef(true);
@@ -323,24 +325,26 @@ const CodeBlock = memo(function CodeBlock({
 
   return (
     <div className="flex flex-col my-3 gap-2">
-      <div className="relative">
-        <div className="absolute right-2 top-4">
-          <div className="w-4 h-4">
-            {copied ? (
-              <Check size={15} className="text-green-500" />
-            ) : (
-              <Copy
-                size={15}
-                onClick={copyToClipboard}
-                className="cursor-pointer text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
-              />
-            )}
+      {showSqlCode && (
+        <div className="relative">
+          <div className="absolute right-2 top-4">
+            <div className="w-4 h-4">
+              {copied ? (
+                <Check size={15} className="text-green-500" />
+              ) : (
+                <Copy
+                  size={15}
+                  onClick={copyToClipboard}
+                  className="cursor-pointer text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+                />
+              )}
+            </div>
           </div>
+          <pre className="!bg-prima !text-[#f8f8f2] w-full !p-5 !pt-8 text-sm rounded-md overflow-auto">
+            <code className={`language-${language ?? 'markup'}`}>{children}</code>
+          </pre>
         </div>
-        <pre className="!bg-prima !text-[#f8f8f2] w-full !p-5 !pt-8 text-sm rounded-md overflow-auto">
-          <code className={`language-${language ?? 'markup'}`}>{children}</code>
-        </pre>
-      </div>
+      )}
       
       {visibleLoading ? (
         <div className="w-full h-32 bg-primary opacity-20 rounded-md animate-pulse" />
@@ -368,7 +372,7 @@ const CodeBlock = memo(function CodeBlock({
         </>
       ) : null}
 
-      {language === 'sql' && !autoRun && (
+      {language === 'sql' && !autoRun && showSqlCode && (
         <Button
           disabled={isDisabled || isLoading}
           aria-disabled={isDisabled || isLoading}

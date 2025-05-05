@@ -6,14 +6,18 @@ import { FlipWords } from './flipping-words'
 import { motion } from 'motion/react'
 
 import { Textarea } from '@/components/ui/textarea'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
 
 type Props = {
   value: string
   onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
   onSubmit: (e: React.FormEvent<HTMLFormElement>) => void
+  showSQL: boolean
+  onToggleShowSQL: (show: boolean) => void
 }
 
-export function Form({ onChange, onSubmit, value }: Props) {
+export function Form({ onChange, onSubmit, value, showSQL, onToggleShowSQL }: Props) {
   const [focused, setFocused] = useState(false)
   const [conversationStarted, setConversationStarted] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement | null>(null)
@@ -105,6 +109,27 @@ export function Form({ onChange, onSubmit, value }: Props) {
           value={value}
           className="resize-none w-full p-4 rounded-lg min-h-[56px] bg-background border focus:ring-2 focus:ring-primary/20 transition-all duration-200"
         />
+      </div>
+      
+      <div className="flex justify-between items-center mt-2">
+        <div className="flex items-center space-x-2">
+          <Switch 
+            id="show-sql"
+            checked={showSQL}
+            onCheckedChange={onToggleShowSQL}
+          />
+          <Label htmlFor="show-sql" className="text-sm text-muted-foreground">
+            Show SQL
+          </Label>
+        </div>
+        
+        <button 
+          type="submit" 
+          disabled={!value.trim()}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+        >
+          Send
+        </button>
       </div>
     </form>
   )

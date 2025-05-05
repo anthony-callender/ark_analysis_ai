@@ -39,6 +39,11 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
   const updateChats = useAppState((state) => state.updateChats)
   const clearChat = useAppState((state) => state.clearChat)
   const [isNewChat, setIsNewChat] = useState(false)
+  
+  // Use showSQL from global state
+  const showSQL = useAppState((state) => state.showSQL)
+  const setShowSQL = useAppState((state) => state.setShowSQL)
+  
   const pathname = usePathname()
   const { toast } = useToast()
   const messagesChat = useRef<HTMLDivElement | null>(null)
@@ -212,6 +217,39 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
     });
   }, [toast]);
 
+  // Render SQL code blocks conditionally
+  const renderCodeBlock = useCallback(({ className, children }: any) => {
+    const language = className?.includes('sql') ? 'sql' : 'markup'
+    const isSQL = language === 'sql'
+    
+    // Only render SQL if showSQL is true or it's not an SQL block
+    if (!showSQL && isSQL) {
+      return null
+    }
+    
+    return (
+      <CodeBlock
+        connectionString={value.connectionString}
+        isDisabled={isLoading}
+        language={language}
+        sqlResult={
+          sqlResults[
+            `${children?.toString()}_${messages[messages.length - 1]?.id}`
+          ]
+        }
+        setSqlResult={(result) =>
+          handleSetSqlResult(
+            `${children?.toString()}_${messages[messages.length - 1]?.id}`,
+            result
+          )
+        }
+        autoRun={isSQL}
+      >
+        {children}
+      </CodeBlock>
+    )
+  }, [value.connectionString, isLoading, sqlResults, messages, handleSetSqlResult, showSQL])
+
   return (
     <div className="flex-1 flex flex-col w-full">
       <Navbar user={user} />
@@ -277,36 +315,7 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
                                   key={`${message.id}-part-${index}`}
                                   remarkPlugins={[remarkGfm]}
                                   components={{
-                                    code: ({ className, children }) => {
-                                      const language = className?.includes(
-                                        'sql'
-                                      )
-                                        ? 'sql'
-                                        : 'markup'
-                                      return (
-                                        <CodeBlock
-                                          connectionString={
-                                            value.connectionString
-                                          }
-                                          isDisabled={isLoading}
-                                          language={language}
-                                          sqlResult={
-                                            sqlResults[
-                                              `${children?.toString()}_${message.id}`
-                                            ]
-                                          }
-                                          setSqlResult={(result) =>
-                                            handleSetSqlResult(
-                                              `${children?.toString()}_${message.id}`,
-                                              result
-                                            )
-                                          }
-                                          autoRun={language === 'sql'}
-                                        >
-                                          {children}
-                                        </CodeBlock>
-                                      )
-                                    },
+                                    code: renderCodeBlock,
                                     li: ({ children }) => (
                                       <li className="my-1">{children}</li>
                                     ),
@@ -375,32 +384,7 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
                             <Markdown
                               remarkPlugins={[remarkGfm]}
                               components={{
-                                code: ({ className, children }) => {
-                                  const language = className?.includes('sql')
-                                    ? 'sql'
-                                    : 'markup'
-                                  return (
-                                    <CodeBlock
-                                      connectionString={value.connectionString}
-                                      isDisabled={isLoading}
-                                      language={language}
-                                      sqlResult={
-                                        sqlResults[
-                                          `${children?.toString()}_${message.id}`
-                                        ]
-                                      }
-                                      setSqlResult={(result) =>
-                                        handleSetSqlResult(
-                                          `${children?.toString()}_${message.id}`,
-                                          result
-                                        )
-                                      }
-                                      autoRun={language === 'sql'}
-                                    >
-                                      {children}
-                                    </CodeBlock>
-                                  )
-                                },
+                                code: renderCodeBlock,
                                 li: ({ children }) => (
                                   <li className="my-1">{children}</li>
                                 ),
@@ -510,6 +494,8 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
           <Form
             onChange={handleInputChange}
             value={input}
+            showSQL={showSQL}
+            onToggleShowSQL={setShowSQL}
             onSubmit={async (e) => {
               if (typeof window !== 'undefined') {
                 if (pathname === '/app') {
