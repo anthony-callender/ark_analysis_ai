@@ -8,6 +8,8 @@ import { motion } from 'motion/react'
 import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
+import { Button } from '@/components/ui/button'
+import { SubmitButton } from './submit-button'
 
 type Props = {
   value: string
@@ -107,7 +109,7 @@ export function Form({ onChange, onSubmit, value, showSQL, onToggleShowSQL }: Pr
             conversationStarted ? 'Ask anything...' : ''
           }
           value={value}
-          className="resize-none w-full p-4 rounded-lg min-h-[56px] bg-background border focus:ring-2 focus:ring-primary/20 transition-all duration-200"
+          className="resize-none w-full p-4 rounded-lg min-h-[56px] focus:ring-2 focus:ring-primary/20 transition-all duration-200"
         />
       </div>
       
@@ -123,13 +125,12 @@ export function Form({ onChange, onSubmit, value, showSQL, onToggleShowSQL }: Pr
           </Label>
         </div>
         
-        <button 
-          type="submit" 
+        <SubmitButton
           disabled={!value.trim()}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+          className="btn-gradient"
         >
           Send
-        </button>
+        </SubmitButton>
       </div>
     </form>
   )

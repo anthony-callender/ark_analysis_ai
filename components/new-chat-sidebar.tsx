@@ -49,10 +49,16 @@ export function NewChatSidebar() {
   
   return (
     <Button 
-      className="w-full btn-gradient shadow-md rounded-xl gap-2 transition-all hover:shadow-lg mb-4 text-primary-950" 
+      className="w-full rounded-xl gap-2 transition-all mb-4" 
       size="lg" 
       onClick={handleClick}
       disabled={isCreating}
+      style={{
+        backgroundColor: "#3b82f6", 
+        color: "white",
+        boxShadow: "0 0 5px 2px rgba(255, 255, 255, 0.3), 0 0 10px 5px rgba(255, 255, 255, 0.15)",
+        border: "1px solid white"
+      }}
     >
       {isCreating ? (
         <span className="flex items-center gap-2">

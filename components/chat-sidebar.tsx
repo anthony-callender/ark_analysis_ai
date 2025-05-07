@@ -9,6 +9,7 @@ import { SidebarItem } from "./sidebar-item";
 import { useAppState } from "@/state";
 import { v4 as uuidv4 } from "uuid";
 import { useChatPersistence } from "@/hooks/use-chat-persistence";
+import { ThemeSwitcher } from "@/components/theme-switcher";
 
 export function ChatSidebar() {
   const { chats, setChats, setChat, chat: activeChat, updateChats } = useAppState();
@@ -129,8 +130,11 @@ export function ChatSidebar() {
 
   return (
     <aside className="w-64 border-r p-2 flex flex-col h-full relative bg-gradient-to-br from-primary-900 via-primary-950 to-primary-900 dark:from-neutral-900 dark:via-neutral-900 dark:to-neutral-800 text-white">
-      <div className="flex items-center justify-between mb-4 px-2 sticky top-0 z-10 backdrop-blur-sm bg-primary-900/40 dark:bg-neutral-900/50 py-2 rounded-lg">
-        <h2 className="font-semibold text-lg">Chats</h2>
+      <div className="flex items-center justify-between mb-4 px-2 sticky top-0 z-10 py-2 rounded-lg">
+        <div className="flex-1 text-center flex items-center justify-center gap-2">
+          <h2 className="font-semibold text-2xl">ARK</h2>
+          <ThemeSwitcher />
+        </div>
         <div className="flex gap-1">
           <Button 
             size="icon" 
@@ -155,9 +159,14 @@ export function ChatSidebar() {
             size="icon"
             onClick={createChat} 
             disabled={loading}
-            className="btn-gradient"
+            style={{
+              backgroundColor: "#3b82f6", 
+              color: "white",
+              boxShadow: "0 0 5px 2px rgba(255, 255, 255, 0.3), 0 0 10px 5px rgba(255, 255, 255, 0.15)",
+              border: "1px solid white"
+            }}
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-4 w-4 text-black" />
           </Button>
         </div>
       </div>

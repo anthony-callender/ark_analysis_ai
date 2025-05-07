@@ -1,6 +1,5 @@
 import { ViewTransitions } from 'next-view-transitions'
-
-import ThemeSwitcher from '@/components/theme-switcher'
+import { ThemeSwitcher } from '@/components/theme-switcher'
 import { GeistSans } from 'geist/font/sans'
 import { ThemeProvider } from 'next-themes'
 
@@ -35,7 +34,7 @@ export default async function RootLayout({
         <body className="bg-background text-foreground h-screen overflow-hidden">
           <ThemeProvider
             attribute="class"
-            defaultTheme="dark"
+            defaultTheme="light"
             enableSystem
             disableTransitionOnChange
           >

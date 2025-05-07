@@ -77,6 +77,9 @@ const CodeBlock = memo(function CodeBlock({
   const isMountedRef = useRef(true);
   const animationFrameRef = useRef<number | null>(null);
   
+  // Store whether we've already executed this SQL
+  const executedRef = useRef(false);
+  
   useEffect(() => {
     // Set mounted flag
     isMountedRef.current = true;
@@ -89,6 +92,13 @@ const CodeBlock = memo(function CodeBlock({
       }
     };
   }, []);
+
+  // Reset execution state when SQL content changes
+  useEffect(() => {
+    if (children?.toString() !== queryRef.current) {
+      executedRef.current = false;
+    }
+  }, [children]);
 
   useEffect(() => {
     // Use a stable timer to highlight code only once per render cycle
@@ -112,6 +122,16 @@ const CodeBlock = memo(function CodeBlock({
   const queryRef = useRef<string | null>(null)
   // Track visible loading state separately to avoid flashing
   const [visibleLoading, setVisibleLoading] = useState(false);
+  
+  // If this specific query already has a result, don't re-run it
+  useEffect(() => {
+    if (sqlResult && children) {
+      const query = children.toString();
+      queryRef.current = query;
+      executedRef.current = true;
+      setHasRun(true);
+    }
+  }, [sqlResult, children]);
   
   // Delayed loading indicator to prevent flashing on quick responses
   useEffect(() => {
@@ -148,8 +168,8 @@ const CodeBlock = memo(function CodeBlock({
     
     const query = children?.toString();
     
-    // Skip if we've already run this exact query
-    if (queryRef.current === query && hasRun) {
+    // Skip if we've already run this exact query or if it's already been executed
+    if ((queryRef.current === query && hasRun) || executedRef.current) {
       return;
     }
     
@@ -165,6 +185,7 @@ const CodeBlock = memo(function CodeBlock({
         if (isMountedRef.current) {
           queryRef.current = query;
           setHasRun(true);
+          executedRef.current = true;
           setSqlResult?.(result);
         }
       } catch (error) {
@@ -176,6 +197,7 @@ const CodeBlock = memo(function CodeBlock({
     queryRef.current = query;
     setIsLoading(true);
     setHasRun(true);
+    executedRef.current = true;
 
     // Store current runId to check if this run is still relevant when it completes
     const currentRunId = runIdRef.current;
@@ -262,7 +284,7 @@ const CodeBlock = memo(function CodeBlock({
     let runTimer: NodeJS.Timeout | null = null;
     
     // Only auto-run when needed and not already processed
-    if (language === 'sql' && autoRun && !hasRun && !isDisabled && children?.toString()) {
+    if (language === 'sql' && autoRun && !hasRun && !isDisabled && children?.toString() && !executedRef.current) {
       // Small delay to batch UI updates and prevent flashing
       runTimer = setTimeout(() => {
         if (isMountedRef.current) {

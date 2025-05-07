@@ -218,7 +218,7 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
   }, [toast]);
 
   // Render SQL code blocks conditionally
-  const renderCodeBlock = useCallback(({ className, children }: any) => {
+  const renderCodeBlock = useCallback(({ className, children, messageId }: any) => {
     const language = className?.includes('sql') ? 'sql' : 'markup'
     const isSQL = language === 'sql'
     
@@ -227,28 +227,33 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
       return null
     }
     
+    // Generate a unique, stable ID for this code block within this message
+    // Using the SQL content along with the message ID ensures we don't mix up results
+    const sqlKey = `${children?.toString()}_${messageId || ''}`
+    
     return (
       <CodeBlock
         connectionString={value.connectionString}
         isDisabled={isLoading}
         language={language}
-        sqlResult={
-          sqlResults[
-            `${children?.toString()}_${messages[messages.length - 1]?.id}`
-          ]
-        }
-        setSqlResult={(result) =>
-          handleSetSqlResult(
-            `${children?.toString()}_${messages[messages.length - 1]?.id}`,
-            result
-          )
-        }
+        sqlResult={sqlResults[sqlKey]}
+        setSqlResult={(result) => handleSetSqlResult(sqlKey, result)}
         autoRun={isSQL}
       >
         {children}
       </CodeBlock>
     )
-  }, [value.connectionString, isLoading, sqlResults, messages, handleSetSqlResult, showSQL])
+  }, [value.connectionString, isLoading, sqlResults, handleSetSqlResult, showSQL])
+
+  // Helper function to create message-specific render functions
+  // This ensures each message has its own isolated SQL results
+  const createMessageRenderer = useCallback((messageId: string) => {
+    return ({ className, children }: any) => renderCodeBlock({ 
+      className, 
+      children, 
+      messageId 
+    })
+  }, [renderCodeBlock])
 
   return (
     <div className="flex-1 flex flex-col w-full">
@@ -315,7 +320,7 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
                                   key={`${message.id}-part-${index}`}
                                   remarkPlugins={[remarkGfm]}
                                   components={{
-                                    code: renderCodeBlock,
+                                    code: createMessageRenderer(message.id),
                                     li: ({ children }) => (
                                       <li className="my-1">{children}</li>
                                     ),
@@ -384,7 +389,7 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
                             <Markdown
                               remarkPlugins={[remarkGfm]}
                               components={{
-                                code: renderCodeBlock,
+                                code: createMessageRenderer(message.id),
                                 li: ({ children }) => (
                                   <li className="my-1">{children}</li>
                                 ),

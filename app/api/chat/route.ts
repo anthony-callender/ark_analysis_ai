@@ -21,6 +21,7 @@ import {
 import { createClient } from '@/utils/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { SchemaVectorStore, StructuredDocumentation } from '@/utils/vectorStore'
+import { runSql } from '@/actions/run-sql'
 
 // Define the list of target tables for vector store
 const TARGET_TABLES = [
@@ -1325,6 +1326,97 @@ export async function GET(req: Request) {
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30
 
+// Helper function to extract SQL from messages
+function extractSqlFromMessage(message: string): string | null {
+  const sqlMatch = message.match(/```sql\n([\s\S]*?)\n```/)
+  return sqlMatch ? sqlMatch[1] : null
+}
+
+// Helper function to validate SQL and get corrected SQL if needed
+async function validateAndCorrectSql(
+  sql: string,
+  connectionString: string,
+  openai: any,
+  maxRetries = 3
+): Promise<{ sql: string; isValid: boolean; result: any }> {
+  let currentSql = sql
+  let isValid = false
+  let result: any = null
+  let errorMessage = ''
+  let retryCount = 0
+
+  console.log('Starting SQL validation for query:', currentSql.substring(0, 100) + '...')
+
+  while (!isValid && retryCount < maxRetries) {
+    try {
+      // Add retry delay to avoid hammering the database with sequential failed queries
+      if (retryCount > 0) {
+        await new Promise(resolve => setTimeout(resolve, 500 * retryCount))
+      }
+      
+      // Execute the SQL query
+      const sqlResult = await runSql(currentSql, connectionString)
+      
+      try {
+        // Parse the result
+        result = JSON.parse(sqlResult)
+        isValid = true
+        console.log('SQL validated successfully on attempt', retryCount + 1)
+      } catch {
+        // If we can't parse it as JSON, it's likely an error message
+        errorMessage = sqlResult
+        
+        // Generate improved SQL based on the error
+        console.log(`SQL execution error (attempt ${retryCount + 1}): ${errorMessage}`)
+        
+        const correctionResponse = await generateText({
+          model: openai('gpt-4.1-mini'),
+          system: `
+          You are a SQL correction expert. You will be given a SQL query that produced an error.
+          Your task is to fix the SQL query to make it work. Only return the corrected SQL query, nothing else.
+          Return the entire corrected query, not just the part that needed correction.
+          
+          Common issues to watch for:
+          1. Missing or incorrect table names
+          2. Incorrect column references
+          3. Syntax errors in JOINs or WHERE clauses
+          4. Issues with NULLIF or casting
+          5. Missing GROUP BY clauses for aggregate functions
+          `,
+          prompt: `
+          Original SQL query:
+          \`\`\`sql
+          ${currentSql}
+          \`\`\`
+          
+          Error message:
+          ${errorMessage}
+          
+          Please correct the SQL query. Return only the corrected SQL query, nothing else.
+          `,
+        })
+        
+        currentSql = correctionResponse.text.trim()
+        // Remove any markdown formatting if present
+        currentSql = currentSql.replace(/```sql\n([\s\S]*?)\n```/g, '$1').trim()
+        
+        console.log(`Corrected SQL (attempt ${retryCount + 1}):`, currentSql.substring(0, 100) + '...')
+      }
+    } catch (error) {
+      console.error('Error during SQL validation:', error)
+      errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    }
+    
+    retryCount++
+  }
+
+  return {
+    sql: currentSql,
+    isValid,
+    result: isValid ? result : errorMessage
+  }
+}
+
 export async function POST(req: Request) {
   const startTime = Date.now();
   console.log('POST request started at:', new Date().toISOString());
@@ -1744,65 +1836,58 @@ export async function POST(req: Request) {
             const finalQuery = queryMatch[1]
             console.log('\n=== Final Query ===')
             console.log(finalQuery)
-
-            if (chat) {
-              console.log('Updating existing chat:', id)
-              await client
-                .from('chats')
-                .update({
-                  messages: JSON.stringify(
-                    appendResponseMessages({
-                      messages,
-                      responseMessages: response.messages,
-                    })
-                  ),
-                })
-                .eq('id', id)
-            } else {
-              console.log('Creating new chat:', id)
-              const generatedName = await generateText({
-                model: openai('gpt-4o-mini'),
-                system: `
-                  You are an assistant that generates short, concise, descriptive chat names for a PostgreSQL chatbot. 
-                  The name must:
-                  • Capture the essence of the conversation in one sentence.
-                  • Be relevant to PostgreSQL topics.
-                  • Contain no extra words, labels, or prefixes such as "Title:" or "Chat:".
-                  • Not include quotation marks or the word "Chat" anywhere.
-
-                  Example of a good name: Counting users
-                  Example of a good name: Counting users in the last 30 days
-
-                  Example of a bad name: Chat about PostgreSQL: Counting users
-                  Example of a bad name: "Counting users"
-
-                  Your response should be the title text only, nothing else.
-                `,
-                prompt: `The messages are <MESSAGES>${JSON.stringify(messages)}</MESSAGES>`,
-              })
-
-              await client.from('chats').insert({
-                id,
-                user_id: user.id,
-                messages: JSON.stringify(
-                  appendResponseMessages({
-                    messages,
-                    responseMessages: response.messages,
-                  })
-                ),
-                name: generatedName.text,
-                created_at: new Date().toISOString(),
-              })
-            }
-          } else {
-            console.log('No SQL query found in the response')
           }
-        } else {
-          console.log('Last message is not a string or is undefined')
         }
-        console.log('\n=== Workflow Completed ===')
-        console.log('Database update completed successfully')
-        revalidatePath('/app')
+        
+        if (chat) {
+          console.log('Updating existing chat:', id)
+          await client
+            .from('chats')
+            .update({
+              messages: JSON.stringify(
+                appendResponseMessages({
+                  messages,
+                  responseMessages: response.messages,
+                })
+              ),
+            })
+            .eq('id', id)
+        } else {
+          console.log('Creating new chat:', id)
+          const generatedName = await generateText({
+            model: openai('gpt-4o-mini'),
+            system: `
+              You are an assistant that generates short, concise, descriptive chat names for a PostgreSQL chatbot. 
+              The name must:
+              • Capture the essence of the conversation in one sentence.
+              • Be relevant to PostgreSQL topics.
+              • Contain no extra words, labels, or prefixes such as "Title:" or "Chat:".
+              • Not include quotation marks or the word "Chat" anywhere.
+
+              Example of a good name: Counting users
+              Example of a good name: Counting users in the last 30 days
+
+              Example of a bad name: Chat about PostgreSQL: Counting users
+              Example of a bad name: "Counting users"
+
+              Your response should be the title text only, nothing else.
+            `,
+            prompt: `The messages are <MESSAGES>${JSON.stringify(messages)}</MESSAGES>`,
+          })
+
+          await client.from('chats').insert({
+            id,
+            user_id: user.id,
+            messages: JSON.stringify(
+              appendResponseMessages({
+                messages,
+                responseMessages: response.messages,
+              })
+            ),
+            name: generatedName.text,
+            created_at: new Date().toISOString(),
+          })
+        }
       } catch (error) {
         console.error('Error in workflow:', error)
         if (error instanceof Error) {
@@ -1816,10 +1901,147 @@ export async function POST(req: Request) {
     },
   })
 
+  // Intercept the response to validate SQL before streaming
+  const interceptStream = async (input: ReadableStream) => {
+    const reader = input.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let sqlValidated = false
+    let modifiedContent = ''
+    let loadingMessageSent = false
+    
+    // Create a new stream for the filtered content
+    const { readable, writable } = new TransformStream()
+    const writer = writable.getWriter()
+
+    // Process function that handles the validation and streaming
+    const process = async () => {
+      try {
+        let done = false
+        
+        while (!done) {
+          const { value, done: doneReading } = await reader.read()
+          done = doneReading
+          
+          if (done) {
+            // Ensure any remaining buffer is written out
+            if (buffer.length > 0) {
+              await writer.write(new TextEncoder().encode(buffer))
+            }
+            if (writer) await writer.close()
+            return
+          }
+          
+          if (value) {
+            const chunk = decoder.decode(value, { stream: true })
+            buffer += chunk
+            
+            // Show loading message if validating is taking a while
+            if (!sqlValidated && buffer.includes('```sql') && !loadingMessageSent && buffer.length > 500) {
+              loadingMessageSent = true
+              const loadingMessage = "\n\n_(Validating SQL query, this may take a moment...)_\n\n"
+              await writer.write(new TextEncoder().encode(loadingMessage))
+            }
+            
+            // Check if we can extract SQL code from the buffer
+            if (!sqlValidated && buffer.includes('```sql') && buffer.includes('```', buffer.indexOf('```sql') + 6)) {
+              sqlValidated = true
+              const sql = extractSqlFromMessage(buffer)
+              
+              if (sql) {
+                console.log('Found SQL in response, validating before streaming')
+                
+                if (loadingMessageSent) {
+                  // Clean up the loading message with a backspace sequence
+                  await writer.write(new TextEncoder().encode("\r\n"))
+                }
+                
+                try {
+                  // Validate and potentially correct the SQL with a timeout
+                  const validationPromise = validateAndCorrectSql(
+                    sql,
+                    connectionString,
+                    openai
+                  )
+                  
+                  // Add a timeout to prevent validation from taking too long
+                  const timeoutPromise = new Promise<{ sql: string; isValid: boolean; result: any }>(
+                    (_, reject) => setTimeout(() => reject(new Error('SQL validation timeout')), 10000)
+                  )
+                  
+                  const { sql: validatedSql, isValid } = await Promise.race([
+                    validationPromise,
+                    timeoutPromise
+                  ])
+                  
+                  if (isValid) {
+                    // Replace the original SQL with the validated (possibly corrected) SQL
+                    console.log('SQL is valid, proceeding with streaming')
+                    modifiedContent = buffer.replace(
+                      /```sql\n([\s\S]*?)\n```/,
+                      `\`\`\`sql\n${validatedSql}\n\`\`\``
+                    )
+                  } else {
+                    console.log('SQL still has issues after correction attempts, streaming original response')
+                    modifiedContent = buffer
+                  }
+                } catch (error) {
+                  console.error('Error during SQL validation:', error)
+                  modifiedContent = buffer
+                }
+                
+                await writer.write(new TextEncoder().encode(modifiedContent))
+                buffer = '' // Clear buffer as we've handled this content
+              } else {
+                // No SQL found, just write the buffer
+                await writer.write(new TextEncoder().encode(buffer))
+                buffer = ''
+              }
+            } else if (sqlValidated) {
+              // SQL already validated, just stream the content
+              await writer.write(new TextEncoder().encode(chunk))
+            } else {
+              // Continue buffering until we find SQL or confirm there is none
+              if (!buffer.includes('```sql') && buffer.length > 1000) {
+                // If buffer is getting large and no SQL detected, start streaming
+                await writer.write(new TextEncoder().encode(buffer))
+                buffer = ''
+                sqlValidated = true // Mark as validated to stop buffering
+              }
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error in stream processing:', error)
+        if (writer) await writer.abort(error instanceof Error ? error : new Error('Stream processing error'))
+      }
+    }
+    
+    // Start processing the stream
+    process()
+    
+    return readable
+  }
+
   console.log(`Total request processing time: ${Date.now() - startTime}ms`);
   console.log('Returning stream response')
-  return result.toDataStreamResponse({
+  const originalStream = result.toDataStreamResponse({
     headers: {
+      'x-should-update-chats': shouldUpdateChats.toString(),
+    },
+  }).body
+  
+  if (!originalStream) {
+    return new Response('Failed to create stream', { status: 500 })
+  }
+  
+  const interceptedStream = await interceptStream(originalStream)
+  
+  return new Response(interceptedStream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
       'x-should-update-chats': shouldUpdateChats.toString(),
     },
   })

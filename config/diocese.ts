@@ -5,7 +5,7 @@ export const DIOCESE_CONFIG = {
   fullName: 'Diocese of Tucson',
   id: 5,
   testingCenterId: 51,
-  role: 'diocese_manager' as UserRole, // default role
+  role: 'super_admin' as UserRole, // default role
   protectedTables: [
     'testing_centers',
     'testing_sections',

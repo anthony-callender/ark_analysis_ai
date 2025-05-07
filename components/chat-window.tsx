@@ -385,7 +385,7 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
           <div className="max-w-4xl mx-auto w-full space-y-8">
             {(messages.length === 0 || isMainPage) && (
               <div className="text-center py-8">
-                <h3 className="text-xl font-semibold mb-2">Welcome to Database Analysis AI</h3>
+                <h3 className="text-xl font-semibold mb-2">Welcome to ARK Analysis AI</h3>
                 <p className="text-muted-foreground mb-4">
                   {isMainPage 
                     ? "Select an existing chat or create a new one to get started."
@@ -463,15 +463,21 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
               onKeyDown={handleKeyDown}
               placeholder={isMainPage ? "Select a chat to start messaging..." : "Type a message…"}
               rows={1}
-              className="flex-1 resize-none"
+              className="flex-1 resize-none bg-gray-800 placeholder:text-gray-300"
               disabled={isLoading || isMainPage}
             />
             <Button 
               type="submit" 
               disabled={!input.trim() || isLoading || isMainPage} 
               className="shrink-0"
+              style={{
+                backgroundColor: "#3b82f6", 
+                color: "white",
+                boxShadow: "0 0 5px 2px rgba(255, 255, 255, 0.3), 0 0 10px 5px rgba(255, 255, 255, 0.15)",
+                border: "1px solid white"
+              }}
             >
-              <Send className="h-5 w-5" />
+              <Send className="h-5 w-5 text-white" />
             </Button>
           </div>
           

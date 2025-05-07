@@ -344,15 +344,21 @@ export default function ChatInterfaceModern({
                   onChange={handleInputChange}
                   placeholder="Type a message…"
                   rows={1}
-                  className="flex-1 resize-none border-0 focus-visible:ring-0 bg-transparent"
+                  className="flex-1 resize-none border-0 focus-visible:ring-0 bg-gray-800 placeholder:text-gray-300"
                   disabled={isLoading}
                 />
                 <Button 
                   type="submit" 
                   disabled={!input.trim() || isLoading} 
-                  className="shrink-0 btn-gradient"
+                  className="shrink-0"
+                  style={{
+                    backgroundColor: "#3b82f6", 
+                    color: "white",
+                    boxShadow: "0 0 5px 2px rgba(255, 255, 255, 0.3), 0 0 10px 5px rgba(255, 255, 255, 0.15)",
+                    border: "1px solid white"
+                  }}
                 >
-                  <Send className="h-5 w-5" />
+                  <Send className="h-5 w-5 text-black" />
                 </Button>
               </div>
             </form>

@@ -5,38 +5,38 @@
 @layer base {
   :root {
     --background: 0 0% 100%;
-    --foreground: 220 25% 15%;
+    --foreground: 240 10% 3.9%;
     --card: 0 0% 100%;
-    --card-foreground: 220 25% 15%;
-    --popover: 213 100% 25%;
-    --popover-foreground: 0 0% 100%;
-    --primary: 213 100% 25%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 213 68% 30%;
-    --secondary-foreground: 0 0% 100%;
-    --muted: 213 36% 95%;
-    --muted-foreground: 220 25% 15%;
-    --accent: 213 100% 25%;
-    --accent-foreground: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 240 5.9% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
     --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 213 36% 90%;
-    --input: 213 36% 90%;
-    --ring: 213 100% 25%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 240 5.9% 10%;
     --radius: 0.5rem;
-    --chart-1: 213 100% 25%;
-    --chart-2: 213 68% 30%;
-    --chart-3: 213 79% 29%;
-    --chart-4: 212 36% 82%;
-    --chart-5: 220 25% 15%;
-    --sidebar-background: 213 100% 25%;
-    --sidebar-foreground: 0 0% 100%;
-    --sidebar-primary: 213 100% 25%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 213 68% 30%;
-    --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 213 68% 30%;
-    --sidebar-ring: 213 100% 25%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 0 0% 98%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 240 5.9% 90%;
+    --sidebar-ring: 240 5.9% 10%;
   }
 
   .dark {
@@ -118,7 +118,8 @@
   
   /* Button gradient */
   .btn-gradient {
-    @apply bg-gradient-to-r from-primary-500 to-white hover:from-primary-600 hover:to-white/90 text-primary-950;
+    @apply bg-black text-white rounded-md relative border border-white/50;
+    box-shadow: 0 0 5px 3px rgba(255, 255, 255, 0.7), 0 0 15px 5px rgba(255, 255, 255, 0.4);
   }
   
   /* Avatar gradient */

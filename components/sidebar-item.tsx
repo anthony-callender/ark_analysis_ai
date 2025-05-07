@@ -102,73 +102,82 @@ export function SidebarItem({ chat, active, onSelect }: SidebarItemProps) {
     }
   };
 
+  // Active chat style with adjusted box shadow to be more visible on sides
+  const activeItemStyle = active ? {
+    backgroundColor: "#3b82f6", 
+    color: "white",
+    boxShadow: "0 0 8px 4px rgba(255, 255, 255, 0.3), 0 0 16px 8px rgba(255, 255, 255, 0.15)",
+    border: "1px solid white"
+  } : {};
+
   return (
-    <motion.li
-      initial={{ opacity: 0, y: 5 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-      className={`group flex items-center justify-between rounded-xl px-3 py-2 cursor-pointer text-sm
-        ${active 
-          ? "bg-gradient-to-r from-primary-500 to-white text-primary-950 shadow-md" 
-          : "hover:sidebar-item-gradient text-white/80 hover:text-white glass-panel"}`}
-      onClick={!editing ? onSelect : undefined}
-    >
-      {editing ? (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            handleRename();
-          }}
-          className="flex-1 flex items-center gap-1"
-        >
-          <Input
-            ref={inputRef}
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            className="h-7 px-2 text-sm bg-white/10 border-white/10 text-white"
-          />
-          <Button size="icon" type="submit" variant="ghost" className="h-7 w-7 text-white hover:bg-white/10">
-            <Check className="h-4 w-4" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={handleCancel}
-            className="h-7 w-7 text-white hover:bg-white/10"
+    <div className="px-1">
+      <motion.li
+        initial={{ opacity: 0, y: 5 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+        className={`group flex items-center justify-between rounded-xl px-3 py-2 cursor-pointer text-sm
+          ${active ? "" : "hover:sidebar-item-gradient text-white/80 hover:text-white glass-panel"}`}
+        onClick={!editing ? onSelect : undefined}
+        style={activeItemStyle}
+      >
+        {editing ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleRename();
+            }}
+            className="flex-1 flex items-center gap-1"
           >
-            <X className="h-4 w-4" />
-          </Button>
-        </form>
-      ) : (
-        <>
-          <span className="flex-1 truncate" title={chat.title}>
-            {chat.title}
-          </span>
-          <div className="hidden group-hover:flex gap-1">
-            <Button 
-              size="icon" 
-              variant="ghost" 
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setEditing(true);
-              }}
+            <Input
+              ref={inputRef}
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="h-7 px-2 text-sm bg-white/10 border-white/10 text-white"
+            />
+            <Button size="icon" type="submit" variant="ghost" className="h-7 w-7 text-white hover:bg-white/10">
+              <Check className="h-4 w-4" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={handleCancel}
               className="h-7 w-7 text-white hover:bg-white/10"
             >
-              <Edit3 className="h-4 w-4" />
+              <X className="h-4 w-4" />
             </Button>
-            <Button 
-              size="icon" 
-              variant="ghost" 
-              onClick={handleDelete}
-              disabled={isDeleting}
-              className="h-7 w-7 text-white hover:bg-white/10"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        </>
-      )}
-    </motion.li>
+          </form>
+        ) : (
+          <>
+            <span className={`flex-1 truncate ${active ? 'text-black' : 'text-black dark:text-white/80'}`} title={chat.title}>
+              {chat.title}
+            </span>
+            <div className="hidden group-hover:flex gap-1">
+              <Button 
+                size="icon" 
+                variant="ghost" 
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setEditing(true);
+                }}
+                className="h-7 w-7 text-white hover:bg-white/10"
+              >
+                <Edit3 className="h-4 w-4" />
+              </Button>
+              <Button 
+                size="icon" 
+                variant="ghost" 
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="h-7 w-7 text-white hover:bg-white/10"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </>
+        )}
+      </motion.li>
+    </div>
   );
 } 
