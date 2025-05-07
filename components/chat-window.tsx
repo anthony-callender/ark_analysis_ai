@@ -463,7 +463,7 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
               onKeyDown={handleKeyDown}
               placeholder={isMainPage ? "Select a chat to start messaging..." : "Type a message…"}
               rows={1}
-              className="flex-1 resize-none bg-gray-800 placeholder:text-gray-300"
+              className="flex-1 resize-none bg-gray-800 dark:bg-gray-800 placeholder:text-gray-300 text-white"
               disabled={isLoading || isMainPage}
             />
             <Button 
@@ -477,7 +477,7 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
                 border: "1px solid white"
               }}
             >
-              <Send className="h-5 w-5 text-white" />
+              <Send className="h-5 w-5 text-black" />
             </Button>
           </div>
           

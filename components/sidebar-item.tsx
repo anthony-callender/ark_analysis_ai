@@ -161,7 +161,7 @@ export function SidebarItem({ chat, active, onSelect }: SidebarItemProps) {
                   e.stopPropagation();
                   setEditing(true);
                 }}
-                className="h-7 w-7 text-white hover:bg-white/10"
+                className="h-7 w-7 text-black dark:text-white hover:bg-white/10"
               >
                 <Edit3 className="h-4 w-4" />
               </Button>
@@ -170,7 +170,7 @@ export function SidebarItem({ chat, active, onSelect }: SidebarItemProps) {
                 variant="ghost" 
                 onClick={handleDelete}
                 disabled={isDeleting}
-                className="h-7 w-7 text-white hover:bg-white/10"
+                className="h-7 w-7 text-black dark:text-white hover:bg-white/10"
               >
                 <Trash2 className="h-4 w-4" />
               </Button>
