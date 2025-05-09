@@ -26,6 +26,11 @@ export function ChatApp({ user, chatId, initialChat }: ChatAppProps) {
     }
   }, [initialChat, setChat]);
 
+  // Log user object when component mounts - helpful for debugging
+  useEffect(() => {
+    console.log('ChatApp mounted with user:', user);
+  }, [user]);
+
   return (
     <div className="flex w-full h-screen overflow-hidden fixed inset-0">
       {/* Sidebar */}

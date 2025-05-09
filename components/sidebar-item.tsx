@@ -7,7 +7,7 @@ import { Trash2, Edit3, Check, X } from "lucide-react";
 import Link from "next/link";
 import { motion } from "motion/react";
 import { deleteChat } from "@/actions/delete-chat";
-import { saveChat } from "@/actions/save-chat";
+import { saveChat } from "@/app/actions/save-chat";
 import { useRouter } from "next/navigation";
 import { useAppState } from "@/state";
 

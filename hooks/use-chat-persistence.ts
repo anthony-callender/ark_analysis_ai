@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef } from 'react'
 import { useAppState } from '@/state'
-import { saveChat } from '@/actions/save-chat'
+import { saveChat } from '@/app/actions/save-chat'
 import { Message } from 'ai'
 import { useToast } from './use-toast'
 
@@ -53,15 +53,7 @@ export function useChatPersistence() {
         }
         return false
       } else {
-        // If a new chat name was generated, update the current chat
-        if (result.name && chat?.id === id && chat.name !== result.name) {
-          console.log('Updating chat name to:', result.name)
-          setChat({
-            ...chat,
-            name: result.name
-          })
-        }
-        
+        // Update chats after successful save
         // Set a flag to update chats later (outside of this function)
         if (!updatePendingRef.current) {
           updatePendingRef.current = true;

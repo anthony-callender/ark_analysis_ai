@@ -1,6 +1,7 @@
 import { Message } from 'ai'
 import { create } from 'zustand'
-import { getChats } from '../actions/get-chats'
+import { getChats } from '@/app/actions/get-chats'
+import { saveChat } from '@/app/actions/save-chat'
 import { persist } from 'zustand/middleware'
 
 type AppState = {
@@ -102,46 +103,37 @@ export const useAppState = create<AppState>()(
           }
           
           console.log('Updating chats list from the database');
-          const { data, error } = await getChats();
-
-          if (error) {
-            console.error('Error updating chats:', error);
-            return;
-          }
-
-          if (!data) {
-            console.warn('No chat data returned');
-            return;
-          }
+          const result = await getChats();
+          const chatsData = result.chats || [];
 
           // Only update state if the data has changed
           const currentChats = get().chats;
           
           // Fast comparison using lengths and IDs
-          let hasChanged = currentChats.length !== data.length;
+          let hasChanged = currentChats.length !== chatsData.length;
           
-          if (!hasChanged && data.length > 0) {
+          if (!hasChanged && chatsData.length > 0) {
             // Do a more detailed comparison if needed
-            const currentIds = new Set(currentChats.map(c => c.id));
-            const newIds = new Set(data.map(c => c.id));
+            const currentIds = new Set(currentChats.map((c: any) => c.id));
+            const newIds = new Set(chatsData.map((c: any) => c.id));
             
             // Check if any IDs are different
-            hasChanged = currentChats.some(c => !newIds.has(c.id)) || 
-                        data.some(c => !currentIds.has(c.id));
+            hasChanged = currentChats.some((c: any) => !newIds.has(c.id)) || 
+                        chatsData.some((c: any) => !currentIds.has(c.id));
             
             // If IDs match but we need to check for other changes (like names)
             if (!hasChanged) {
-              hasChanged = data.some((newChat, i) => {
-                const currentChat = currentChats.find(c => c.id === newChat.id);
+              hasChanged = chatsData.some((newChat: any) => {
+                const currentChat = currentChats.find((c: any) => c.id === newChat.id);
                 return currentChat && currentChat.name !== newChat.name;
               });
             }
           }
           
           if (hasChanged) {
-            console.log(`Updating state with ${data.length} chats`);
+            console.log(`Updating state with ${chatsData.length} chats`);
             set({ 
-              chats: data,
+              chats: chatsData,
               lastUpdateTime: now
             });
           } else {
