@@ -2,6 +2,7 @@ import { Hero } from '@/components/hero'
 import HowItWorks from '@/components/how-it-works'
 import OpenSourceSection from '@/components/open-source-section'
 import { cn } from '@/utils/cn'
+import Link from 'next/link'
 
 const Section = ({
   children,
@@ -21,6 +22,14 @@ export default async function Index() {
       <main className="mt-12 mx-auto">
         <Section>
           <Hero />
+          <div className="flex justify-center mt-8">
+            <Link
+              href="/app"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-md px-6 py-3 font-medium"
+            >
+              Go to App
+            </Link>
+          </div>
         </Section>
         <Section className='flex items-center justify-center mt-14'>
           <a

@@ -1,60 +1,9 @@
 'use client'
 
 import ChatInterfaceModern from '@/components/chat-interface-modern'
-import { createClient } from '@/utils/supabase/client'
-import { useEffect, useState } from 'react'
-import { User } from '@supabase/supabase-js'
 import { Message } from 'ai'
 
 export default function ChatDemo() {
-  const supabase = createClient()
-  const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const fetchUser = async () => {
-      try {
-        const { data } = await supabase.auth.getUser()
-        setUser(data.user)
-      } catch (error) {
-        console.error('Error fetching user:', error)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    fetchUser()
-  }, [supabase])
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="flex space-x-2">
-          <div className="w-3 h-3 rounded-full bg-primary animate-bounce" />
-          <div className="w-3 h-3 rounded-full bg-primary animate-bounce [animation-delay:0.2s]" />
-          <div className="w-3 h-3 rounded-full bg-primary animate-bounce [animation-delay:0.4s]" />
-        </div>
-      </div>
-    )
-  }
-
-  if (!user) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-screen px-4">
-        <h1 className="text-2xl font-bold mb-4">Sign in Required</h1>
-        <p className="text-muted-foreground mb-6">
-          Please sign in to use the chat interface
-        </p>
-        <a 
-          href="/login"
-          className="bg-primary text-primary-foreground px-4 py-2 rounded-md"
-        >
-          Sign In
-        </a>
-      </div>
-    )
-  }
-
   // Example messages for demonstration
   const demoChat = {
     id: "demo-chat",
@@ -92,7 +41,7 @@ export default function ChatDemo() {
     <div className="flex flex-col h-screen w-full">
       <ChatInterfaceModern 
         chat={demoChat} 
-        user={user} 
+        user={null}
       />
     </div>
   )

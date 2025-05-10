@@ -21,7 +21,7 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 
 export interface ChatWindowProps {
-  user: User;
+  user?: User | null;
   chatId?: string;
 }
 
@@ -249,23 +249,25 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
   useEffect(() => {
     if (!value.connectionString) {
       toast({
-        title: "Connection Settings Required",
-        description: (
-          <div className="flex flex-col space-y-2">
-            <p>Database connection string is not set.</p>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => window.location.href = '/settings'}
-            >
-              Go to Settings
-            </Button>
-          </div>
-        ),
-        variant: "destructive",
+        title: "Database Connection Missing",
+        description:
+          "Please set up your database connection string to use the app.",
+        variant: "warning",
+        duration: Infinity, // Keep toast until dismissed
       });
     }
   }, [value.connectionString, toast]);
+
+  useEffect(() => {
+    if (!value.openaiApiKey) {
+      toast({
+        title: "OpenAI API Key Missing",
+        description: "Please add your OpenAI API key to enable chat functionality.",
+        variant: "warning",
+        duration: Infinity, // Keep toast until dismissed
+      });
+    }
+  }, [value.openaiApiKey, toast]);
 
   // Update the app state when messages change
   useEffect(() => {

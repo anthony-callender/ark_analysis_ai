@@ -1,7 +1,6 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
-import { createClient } from '../utils/supabase/server'
 
 export async function changeName(formData: FormData) {
   const id = formData.get('id') as string
@@ -15,28 +14,17 @@ export async function changeName(formData: FormData) {
     return { error: 'Name must be less than 100 characters' }
   }
 
-  const supabase = await createClient()
-
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser()
-
-  if (error || !user) {
-    return { error: 'Unexpected error changing name' }
+  try {
+    // The actual update will happen on the client side in localStorage
+    // This server action just returns success to allow client-side updates
+    
+    // Revalidate paths to refresh the UI
+    revalidatePath('/app')
+    revalidatePath(`/app/${id}`)
+    
+    return { success: 'Name changed successfully' }
+  } catch (error) {
+    console.error('Error in changeName:', error)
+    return { error: 'Failed to change name' }
   }
-
-  const { error: updateError } = await supabase
-    .from('chats')
-    .update({ name })
-    .eq('id', id)
-    .eq('user_id', user.id)
-
-  if (updateError) {
-    return { error: 'Unexpected error changing name' }
-  }
-
-  revalidatePath('/app')
-
-  return { success: 'Name changed successfully' }
 }

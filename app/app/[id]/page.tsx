@@ -1,8 +1,5 @@
-import { createClient } from '@/utils/supabase/server'
-import { redirect } from 'next/navigation'
-
+import { User } from '@supabase/supabase-js'
 import { ChatApp } from '@/components/chat-app'
-import { Message } from 'ai'
 
 type ChatPageParams = {
   params: Promise<{ id: string }>
@@ -11,36 +8,28 @@ type ChatPageParams = {
 export default async function ChatPage({ params }: ChatPageParams) {
   // Await the params to get the id
   const { id } = await params
-  const supabase = await createClient()
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return redirect('/login')
+  // Create a mock user object that conforms to the Supabase User type
+  const mockUser: User = {
+    id: '00000000-0000-0000-0000-000000000000',
+    email: 'anonymous@example.com',
+    app_metadata: {},
+    user_metadata: {},
+    aud: 'authenticated',
+    created_at: new Date().toISOString(),
+    role: '',
+    confirmed_at: ''
   }
 
-  const { data: chat } = await supabase
-    .from('chats')
-    .select('*')
-    .eq('id', id)
-    .eq('user_id', user.id)
-    .single()
-
-  if (!chat) {
-    return redirect('/app')
-  }
+  // We no longer check the database
+  // Chat data will be loaded from localStorage on the client side
 
   return (
     <ChatApp 
-      user={user}
+      user={mockUser}
       chatId={id}
-      initialChat={{
-        id: chat.id,
-        name: chat.name,
-        messages: JSON.parse(chat.messages as string) as Message[],
-      }}
+      // Pass only the ID - the component will load data from localStorage
+      initialChat={undefined}
     />
   )
 }

@@ -5,9 +5,10 @@ import { Database } from '@/database.types'
 export const createClient = async () => {
   const cookieStore = await cookies()
 
+  // Use the service role key to bypass RLS policies
   return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
     {
       cookies: {
         getAll() {

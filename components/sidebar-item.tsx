@@ -37,6 +37,40 @@ export function SidebarItem({ chat, active, onSelect }: SidebarItemProps) {
     }
   }, [editing]);
 
+  // Delete the chat
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (confirm("Are you sure you want to delete this chat?")) {
+      setIsDeleting(true);
+      try {
+        // Delete from localStorage first
+        try {
+          localStorage.removeItem(`chat-${chat.id}`);
+          console.log('Deleted chat from localStorage:', chat.id);
+        } catch (e) {
+          console.error('Could not delete from localStorage:', e);
+        }
+        
+        // Call the server action for revalidation
+        await deleteChat(chat.id);
+        
+        // Update chats list in state immediately after deletion
+        await updateChats();
+        
+        // If the deleted chat was the active chat, navigate to the main app page
+        if (currentChat?.id === chat.id) {
+          router.push('/app');
+        }
+      } catch (error) {
+        console.error("Error deleting chat:", error);
+      } finally {
+        setIsDeleting(false);
+      }
+    }
+  };
+
   // Save the new title
   const handleRename = async () => {
     if (!title.trim()) {
@@ -46,6 +80,20 @@ export function SidebarItem({ chat, active, onSelect }: SidebarItemProps) {
     }
 
     try {
+      // Update in localStorage first
+      try {
+        const chatData = localStorage.getItem(`chat-${chat.id}`);
+        if (chatData) {
+          const chatObj = JSON.parse(chatData);
+          chatObj.name = title.trim();
+          localStorage.setItem(`chat-${chat.id}`, JSON.stringify(chatObj));
+          console.log('Updated chat name in localStorage:', chat.id);
+        }
+      } catch (e) {
+        console.error('Could not update name in localStorage:', e);
+      }
+
+      // Call server action for revalidation
       await saveChat({
         id: chat.id,
         name: title.trim(),
@@ -75,31 +123,6 @@ export function SidebarItem({ chat, active, onSelect }: SidebarItemProps) {
   const handleCancel = () => {
     setTitle(chat.title);
     setEditing(false);
-  };
-
-  // Delete the chat
-  const handleDelete = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    if (confirm("Are you sure you want to delete this chat?")) {
-      setIsDeleting(true);
-      try {
-        await deleteChat(chat.id);
-        
-        // Update chats list in state immediately after deletion
-        await updateChats();
-        
-        // If the deleted chat was the active chat, navigate to the main app page
-        if (currentChat?.id === chat.id) {
-          router.push('/app');
-        }
-      } catch (error) {
-        console.error("Error deleting chat:", error);
-      } finally {
-        setIsDeleting(false);
-      }
-    }
   };
 
   // Active chat style with adjusted box shadow to be more visible on sides

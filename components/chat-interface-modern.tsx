@@ -35,7 +35,7 @@ export default function ChatInterfaceModern({
         messages: Message[]
       }
     | undefined
-  user: User
+  user?: User | null
   showNavbar?: boolean
 }) {
   const { setChat, chat: chatState, clearChat } = useAppState();
@@ -173,7 +173,7 @@ export default function ChatInterfaceModern({
             </div>
             <div className="flex items-center">
               <div className="flex items-center gap-2">
-                <span className="text-sm">{user.email}</span>
+                {user?.email && <span className="text-sm">{user.email}</span>}
                 <div className="h-8 w-8 rounded-full avatar-gradient flex items-center justify-center text-primary-foreground">
                   <UserIcon className="h-4 w-4" />
                 </div>

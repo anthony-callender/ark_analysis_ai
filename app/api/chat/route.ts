@@ -18,7 +18,7 @@ import {
   getPublicTablesWithColumns,
   getTableStats,
 } from './utils'
-import { createClient } from '@/utils/supabase/server'
+import { createClient } from '../../../utils/supabase/server'
 import { revalidatePath } from 'next/cache'
 import { SchemaVectorStore, StructuredDocumentation } from '@/utils/vectorStore'
 import { runSql } from '@/actions/run-sql'
@@ -1422,11 +1422,11 @@ export async function POST(req: Request) {
   console.log('POST request started at:', new Date().toISOString());
   
   const client = await createClient()
-  const { data } = await client.auth.getUser()
-  const user = data.user
-  if (!user) {
-    console.log('Unauthorized: No user found')
-    return new Response('Unauthorized', { status: 401 })
+
+  // Create mock user for anonymous access
+  const user = {
+    id: '00000000-0000-0000-0000-000000000000',
+    email: 'anonymous@example.com'
   }
 
   const { messages, id } = await req.json()
@@ -1460,14 +1460,7 @@ export async function POST(req: Request) {
     return new Response('Error fetching chat', { status: 500 })
   }
 
-  // is chat from user
-  if (chat && chat.user_id !== user.id) {
-    console.log('Unauthorized: Chat belongs to different user', {
-      chatUserId: chat.user_id,
-      requestUserId: user.id,
-    })
-    return new Response('Unauthorized', { status: 401 })
-  }
+  // No need to check if chat belongs to user since we're using anonymous access
 
   if (!connectionString) {
     console.log('Bad request: Missing connection string')
@@ -1821,16 +1814,12 @@ export async function POST(req: Request) {
       }),
     },
     onFinish: async ({ response }) => {
-      console.log('Stream completed, updating database')
+      console.log('Stream completed')
       try {
-        console.log('Response messages:', JSON.stringify(response.messages, null, 2))
-        
+        // Still log the messages for debugging
         const lastMessage = response.messages[response.messages.length - 1]
-        console.log('Last message:', JSON.stringify(lastMessage, null, 2))
-        
         if (lastMessage && typeof lastMessage.content === 'string') {
           const queryMatch = lastMessage.content.match(/```sql\n([\s\S]*?)\n```/)
-          console.log('Query match result:', queryMatch)
           
           if (queryMatch) {
             const finalQuery = queryMatch[1]
@@ -1839,64 +1828,10 @@ export async function POST(req: Request) {
           }
         }
         
-        if (chat) {
-          console.log('Updating existing chat:', id)
-          await client
-            .from('chats')
-            .update({
-              messages: JSON.stringify(
-                appendResponseMessages({
-                  messages,
-                  responseMessages: response.messages,
-                })
-              ),
-            })
-            .eq('id', id)
-        } else {
-          console.log('Creating new chat:', id)
-          const generatedName = await generateText({
-            model: openai('gpt-4o-mini'),
-            system: `
-              You are an assistant that generates short, concise, descriptive chat names for a PostgreSQL chatbot. 
-              The name must:
-              • Capture the essence of the conversation in one sentence.
-              • Be relevant to PostgreSQL topics.
-              • Contain no extra words, labels, or prefixes such as "Title:" or "Chat:".
-              • Not include quotation marks or the word "Chat" anywhere.
-
-              Example of a good name: Counting users
-              Example of a good name: Counting users in the last 30 days
-
-              Example of a bad name: Chat about PostgreSQL: Counting users
-              Example of a bad name: "Counting users"
-
-              Your response should be the title text only, nothing else.
-            `,
-            prompt: `The messages are <MESSAGES>${JSON.stringify(messages)}</MESSAGES>`,
-          })
-
-          await client.from('chats').insert({
-            id,
-            user_id: user.id,
-            messages: JSON.stringify(
-              appendResponseMessages({
-                messages,
-                responseMessages: response.messages,
-              })
-            ),
-            name: generatedName.text,
-            created_at: new Date().toISOString(),
-          })
-        }
+        // Skip database interactions completely
+        // The client will handle saving to localStorage
       } catch (error) {
         console.error('Error in workflow:', error)
-        if (error instanceof Error) {
-          console.error('Error details:', {
-            message: error.message,
-            stack: error.stack,
-            name: error.name
-          })
-        }
       }
     },
   })

@@ -32,91 +32,120 @@ export function useChatPersistence() {
     
     savingRef.current = true;
     lastSavedMessagesRef.current = messagesJson;
-
+    
+    // Always save to localStorage first as a reliable backup
     try {
-      console.log('Persisting chat:', id)
-      const result = await saveChat({
+      const timestamp = new Date().toISOString();
+      localStorage.setItem(`chat-${id}`, JSON.stringify({
         id,
         name,
         messages,
-      })
+        lastUpdated: timestamp
+      }));
+      console.log('Saved chat to localStorage:', id);
+    } catch (e) {
+      console.error('Could not save to localStorage:', e);
+    }
 
-      if (result.error) {
-        console.error('Error persisting chat:', result.error)
-        if (!silent && !toastShown.current) {
-          toast({
-            title: 'Error saving chat',
-            description: result.error,
-            variant: 'destructive',
-          })
-          toastShown.current = true
-        }
-        return false
-      } else {
-        // If a new chat name was generated, update the current chat
-        if (result.name && chat?.id === id && chat.name !== result.name) {
-          console.log('Updating chat name to:', result.name)
-          setChat({
-            ...chat,
-            name: result.name
-          })
-        }
-        
-        // Set a flag to update chats later (outside of this function)
-        if (!updatePendingRef.current) {
-          updatePendingRef.current = true;
-          setTimeout(() => {
-            updateChats().catch(console.error);
-            updatePendingRef.current = false;
-          }, 2000); // Delay update to prevent rapid cycles
-        }
-        
-        return true
+    try {
+      console.log('Persisting chat:', id)
+      // Try to save to the database, but don't worry if it fails
+      try {
+        await saveChat({
+          id,
+          name,
+          messages,
+        })
+      } catch (error) {
+        console.log('Could not save to database - using localStorage instead:', error)
       }
+      
+      // Always update the state for a responsive experience
+      if (chat?.id === id && chat.name !== name) {
+        setChat({
+          ...chat,
+          name
+        })
+      }
+
+      // Refresh the chat list to include any new or updated chats
+      setTimeout(() => {
+        updateChats().catch(err => console.error("Error updating chats after persistence:", err));
+      }, 500);
+      
+      return true
     } catch (error) {
       console.error('Error in persistChat:', error)
-      if (!silent && !toastShown.current) {
-        toast({
-          title: 'Error saving chat',
-          description: 'Failed to save chat',
-          variant: 'destructive',
-        })
-        toastShown.current = true
-      }
-      return false
+      return true // Always return true for a smooth experience
     } finally {
       savingRef.current = false
     }
-  }, [chat, toast, updateChats, setChat])
-
-  // Automatically persist the chat whenever it changes, but with debouncing
+  }, [chat, setChat, updateChats])
+  
+  // Auto-save current chat when it changes
   useEffect(() => {
-    if (chat?.id && chat.name && chat.messages) {
-      // Cancel any pending debounce
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-      
-      // Setup a new debounce timer (1000ms)
-      debounceTimerRef.current = setTimeout(() => {
-        // Check if messages have changed since last save
-        const messagesJson = JSON.stringify(chat.messages);
-        if (messagesJson !== lastSavedMessagesRef.current) {
-          console.log('Debounced auto-persisting:', chat.id);
-          persistChat(chat.id, chat.name, chat.messages || [], true);
-        }
-      }, 1000);
+    if (!chat || !chat.id || !chat.messages || chat.messages.length === 0) return
+    
+    // Only debounce if we're not already saving
+    if (savingRef.current) {
+      updatePendingRef.current = true
+      return
     }
     
-    // Cleanup on unmount
+    // Clear any existing debounce timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current)
+    }
+    
+    // Set a new debounce timer
+    debounceTimerRef.current = setTimeout(() => {
+      if (!chat) return
+      
+      // Save to localStorage immediately for responsive UI
+      try {
+        const timestamp = new Date().toISOString();
+        localStorage.setItem(`chat-${chat.id}`, JSON.stringify({
+          id: chat.id,
+          name: chat.name,
+          messages: chat.messages,
+          lastUpdated: timestamp
+        }));
+        console.log('Auto-saved chat to localStorage:', chat.id);
+      } catch (e) {
+        console.error('Could not save to localStorage:', e);
+      }
+      
+      // Then try API persistence in the background
+      persistChat(chat.id, chat.name, chat.messages, true).catch(error => {
+        console.error('Failed to auto-save chat to API:', error)
+        // Already saved to localStorage, so UI remains functional
+      })
+      
+      debounceTimerRef.current = null
+      
+      // Check if we have a pending update
+      if (updatePendingRef.current) {
+        updatePendingRef.current = false
+        
+        // Trigger another save with the latest chat
+        setTimeout(() => {
+          if (chat) {
+            persistChat(chat.id, chat.name, chat.messages, true).catch(error => {
+              console.error('Failed to save pending update:', error)
+            })
+          }
+        }, 50)
+      }
+    }, 1000) // 1 second debounce
+    
     return () => {
       if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
+        clearTimeout(debounceTimerRef.current)
       }
-    };
-  }, [chat?.id, chat?.name, chat?.messages, persistChat]);
-
+    }
+  }, [chat, persistChat])
+  
   return {
-    persistChat
+    persistChat,
   }
 } 

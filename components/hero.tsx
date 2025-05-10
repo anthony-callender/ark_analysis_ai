@@ -1,9 +1,11 @@
 import React from 'react'
 import { Spotlight } from '@/components/ui/spotlight'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/utils/cn'
+import { ArrowRight } from 'lucide-react'
 import Link from 'next/link'
 
-export function Hero() {
+export const Hero = () => {
   return (
     <div className="w-full rounded-md flex flex-col items-center antialiased relative mt-14">
       <Spotlight
@@ -22,7 +24,7 @@ export function Hero() {
           interaction today!
         </p>
       </div>
-      <Link href="/login" className="w-full flex items-center justify-center">
+      <Link href="/app" className="w-full flex items-center justify-center">
         <Button className="mt-4 w-full max-w-[200px] mx-auto">
           Get Started
         </Button>

@@ -1,3 +1,5 @@
+"use client";
+
 import {
   Sidebar,
   SidebarContent,
@@ -9,36 +11,20 @@ import {
   SidebarMenuSub,
   SidebarMenuSubItem,
 } from '@/components/ui/sidebar'
-import { Suspense } from 'react'
-import { createClient } from '@/utils/supabase/server'
-import { redirect } from 'next/navigation'
+import { Suspense, useEffect } from 'react'
+import { useAppState } from '../state';
 
 import { NewChatSidebar } from './new-chat-sidebar'
 import { AppSidebarItems } from './app-sidebar-items'
 
-async function Items() {
-  const client = await createClient()
+function Items() {
+  const { chats, updateChats } = useAppState();
 
-  const {
-    data: { user },
-    error,
-  } = await client.auth.getUser()
+  useEffect(() => {
+    updateChats();
+  }, [updateChats]);
 
-  if (error || !user) {
-    return redirect('/login')
-  }
-
-  const { data: chats } = await client
-    .from('chats')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false })
-
-  if (!chats) {
-    return null
-  }
-
-  return <AppSidebarItems chats={chats} />
+  return <AppSidebarItems chats={chats || []} />;
 }
 
 export function AppSidebar() {

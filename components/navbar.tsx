@@ -1,17 +1,19 @@
 'use client'
 
-import Link from 'next/link'
-import { logoutAction } from '@/actions/logout'
-import { SubmitButton } from '@/components/submit-button'
+// import Link from 'next/link' // No longer needed
+// import { logoutAction } from '@/actions/logout' // Removed
+// import { SubmitButton } from '@/components/submit-button' // Removed, was only for logout
 import { Button } from '@/components/ui/button'
-import type { User } from '@supabase/supabase-js'
+// import type { User } from '@supabase/supabase-js' // Removed
 import { AnimatePresence } from 'motion/react'
 import { useAppLocalStorage } from '@/hooks/use-app-local-storage'
 import { useAppState } from '@/state'
 import { SidebarTrigger } from './ui/sidebar'
 import { ChatName } from './chat-name'
 import { useToast } from '../hooks/use-toast'
-export default function Navbar({ user }: { user: User }) {
+
+// export default function Navbar({ user }: { user: User }) { // Removed user prop
+export default function Navbar() {
   const { value, setValue } = useAppLocalStorage()
   const chat = useAppState((s) => s.chat)
   const { toast } = useToast()
@@ -24,7 +26,7 @@ export default function Navbar({ user }: { user: User }) {
           {chat && <ChatName id={chat.id} initialName={chat.name} />}
         </div>
 
-        {user ? (
+        {/* {user ? ( */}
           <div className="flex items-center gap-2">
             <Button
               variant={'ghost'}
@@ -61,6 +63,7 @@ export default function Navbar({ user }: { user: User }) {
                 </Button>
               </AnimatePresence>
             )}
+            {/* Removed Logout form and button
             <form
               action={async () => {
                 setValue({
@@ -75,13 +78,13 @@ export default function Navbar({ user }: { user: User }) {
               <SubmitButton variant="ghost" pendingText="Logging out...">
                 Logout
               </SubmitButton>
-            </form>
+            </form> */}
           </div>
-        ) : (
+        {/* ) : (
           <Link href="/login">
             <Button>Login</Button>
           </Link>
-        )}
+        )} */}
       </nav>
     </AnimatePresence>
   )

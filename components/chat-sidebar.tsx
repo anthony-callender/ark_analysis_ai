@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from "react";
-import { Plus, Settings, RefreshCcw } from "lucide-react";
+import { Plus, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRouter, usePathname } from "next/navigation";
@@ -36,8 +36,15 @@ export function ChatSidebar() {
     };
     
     loadChats();
-    // No dependencies - only run once on mount
-  }, []);
+    
+    // Set up periodic refresh every 5 seconds
+    const refreshInterval = setInterval(() => {
+      updateChats().catch(err => console.error("Error in refresh interval:", err));
+    }, 5000);
+    
+    // Clean up on unmount
+    return () => clearInterval(refreshInterval);
+  }, [updateChats]);
   
   // Manual refresh function
   const handleManualRefresh = async () => {
@@ -61,24 +68,54 @@ export function ChatSidebar() {
     try {
       const id = uuidv4();
       const newChatName = "New Chat";
+      const timestamp = new Date().toISOString();
       
-      // Create the new chat in state
+      // Create the new chat in state immediately for a responsive UI
       const newChat = { 
         id, 
         name: newChatName, 
         messages: [] 
       };
 
+      // Update the state immediately
       setChat(newChat);
       
-      // Save to database
-      await persistChat(id, newChatName, []);
+      // Also add to the chats list for immediate display
+      setChats([
+        {
+          id,
+          name: newChatName,
+          created_at: timestamp
+        },
+        ...chats
+      ]);
       
-      // Navigate to the new chat
+      // Navigate to the new chat immediately
       router.push(`/app/${id}`);
       
-      // Refresh the chat list
-      await updateChats();
+      // Save to localStorage as a reliable backup
+      try {
+        localStorage.setItem(`chat-${id}`, JSON.stringify({
+          id,
+          name: newChatName,
+          messages: [],
+          lastUpdated: timestamp
+        }));
+      } catch (e) {
+        console.error('Could not save to localStorage:', e);
+      }
+      
+      // Try to save to database, but don't block UI on this
+      try {
+        await persistChat(id, newChatName, []);
+      } catch (error) {
+        console.error('Database save failed, but local state is updated:', error);
+      }
+      
+      // Refresh the chat list after a short delay
+      setTimeout(() => {
+        updateChats().catch(err => console.error("Error updating chats after creation:", err));
+      }, 500);
     } catch (error) {
       console.error("Error creating chat:", error);
     } finally {
@@ -145,15 +182,6 @@ export function ChatSidebar() {
             className="text-white hover:bg-white/10"
           >
             <RefreshCcw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-          </Button>
-          <Button 
-            size="icon" 
-            variant="ghost" 
-            onClick={() => router.push('/settings')} 
-            title="Settings"
-            className="text-white hover:bg-white/10"
-          >
-            <Settings className="h-4 w-4" />
           </Button>
           <Button 
             size="icon"

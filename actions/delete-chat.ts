@@ -1,21 +1,11 @@
 'use server'
 
-import { createClient } from '@/utils/supabase/server'
 import { revalidatePath } from 'next/cache'
 
 export async function deleteChat(chatId: string) {
-  const supabase = await createClient()
-
   try {
-    const { error } = await supabase
-      .from('chats')
-      .delete()
-      .eq('id', chatId)
-
-    if (error) {
-      console.error('Error deleting chat:', error)
-      throw new Error('Failed to delete chat')
-    }
+    // Server action can't directly access localStorage, but will revalidate paths
+    // The actual deletion will be performed by the client
 
     // Revalidate all relevant paths to refresh UI
     revalidatePath('/app')

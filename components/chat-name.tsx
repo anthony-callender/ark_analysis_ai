@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/tooltip'
 import { Input } from '@/components/ui/input'
 import { useToast } from '@/hooks/use-toast'
+import { useAppState } from '@/state'
 
 export function ChatName({
   initialName,
@@ -23,6 +24,7 @@ export function ChatName({
   const [name, setName] = useState(initialName)
   const inputRef = useRef<HTMLInputElement>(null)
   const [isEditingName, setIsEditingName] = useState(false)
+  const { chat, setChat, updateChats } = useAppState()
 
   useEffect(() => {
     if (isEditingName && inputRef.current) {
@@ -36,10 +38,35 @@ export function ChatName({
       setIsEditingName(false)
 
       const formData = new FormData()
-
       formData.append('id', id)
       formData.append('name', name)
 
+      // Update localStorage first
+      try {
+        const chatData = localStorage.getItem(`chat-${id}`)
+        if (chatData) {
+          const chatObj = JSON.parse(chatData)
+          chatObj.name = name
+          localStorage.setItem(`chat-${id}`, JSON.stringify(chatObj))
+          
+          // Update the current chat in state if it's the active one
+          if (chat && chat.id === id) {
+            setChat({ 
+              ...chat, 
+              name: name 
+            })
+          }
+          
+          // Update the chat list
+          setTimeout(() => {
+            updateChats()
+          }, 100)
+        }
+      } catch (error) {
+        console.error('Error updating localStorage:', error)
+      }
+
+      // Then call the server action (mainly for revalidation)
       const response = await changeName(formData)
       if (response.error) {
         toast({
@@ -53,10 +80,9 @@ export function ChatName({
       if (response.success) {
         toast({
           title: 'Name changed successfully',
-          description: 'Your audio name has been updated',
+          description: 'Your chat name has been updated',
         })
       }
-      setIsEditingName(false)
     } catch (error) {
       toast({
         title: 'Failed to change name',

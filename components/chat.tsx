@@ -20,7 +20,6 @@ import {
 } from '@/components/ui/table'
 import { useToast } from '../hooks/use-toast'
 import Navbar from './navbar'
-import { User } from '@supabase/supabase-js'
 import { useAppState } from '../state'
 import { usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
@@ -34,7 +33,7 @@ const toolCallToNameText = {
   getTableStats: 'Collecting table statistics...',
 }
 
-function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
+function ChatComponent({ initialId }: { initialId: string }) {
   const chat = useAppState((state) => state.chat)
   const updateChats = useAppState((state) => state.updateChats)
   const clearChat = useAppState((state) => state.clearChat)
@@ -48,6 +47,7 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
   const { toast } = useToast()
   const messagesChat = useRef<HTMLDivElement | null>(null)
   const { value } = useAppLocalStorage()
+  const shouldUpdateChats = useRef(false)
 
   // Enhanced scroll performance with throttling
   const scrollMessagesToBottom = useCallback(() => {
@@ -64,33 +64,7 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
     })
   }, [])
 
-  const shouldUpdateChats = useRef(false)
-
-  const onFinish = useCallback(() => {
-    scrollMessagesToBottom()
-
-    if (shouldUpdateChats.current) {
-      setIsNewChat(false)
-      updateChats().catch((err) => {
-        console.error(err)
-      })
-    }
-  }, [isNewChat, scrollMessagesToBottom, updateChats])
-
-  const onError = useCallback((error: Error) => {
-    toast({
-      title: 'Error',
-      description: error.message,
-      variant: 'destructive',
-    })
-  }, [])
-
-  const onResponse = useCallback((response: Response) => {
-    if (response.headers.get('x-should-update-chats') === 'true') {
-      shouldUpdateChats.current = true
-    }
-  }, [])
-
+  // Initialize chat hook
   const { messages, input, handleInputChange, handleSubmit, isLoading } =
     useChat({
       api: '/api/chat',
@@ -98,13 +72,49 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
         'x-connection-string': value.connectionString,
         'x-openai-api-key': value.openaiApiKey,
       },
-      onFinish,
       streamProtocol: 'data',
       sendExtraMessageFields: true,
       id: initialId,
       initialMessages: chat?.messages ?? [],
-      onError,
-      onResponse,
+      onError: (error) => {
+        toast({
+          title: 'Error',
+          description: error.message,
+          variant: 'destructive',
+        })
+      },
+      onResponse: (response) => {
+        if (response.headers.get('x-should-update-chats') === 'true') {
+          shouldUpdateChats.current = true
+        }
+      },
+      onFinish: () => {
+        scrollMessagesToBottom()
+    
+        if (shouldUpdateChats.current) {
+          setIsNewChat(false)
+          
+          // Save to localStorage immediately after receiving a response
+          if (chat && initialId) {
+            try {
+              localStorage.setItem(`chat-${initialId}`, JSON.stringify({
+                id: initialId,
+                name: chat.name || 'Chat',
+                messages: messages,
+                lastUpdated: new Date().toISOString()
+              }));
+              console.log('Saved updated chat to localStorage on finish');
+            } catch (e) {
+              console.error('Could not save to localStorage on finish:', e);
+            }
+          }
+          
+          // Update the chats list
+          updateChats().catch((err) => {
+            console.error(err)
+          })
+        }
+      }
     })
 
   // Improved component cleanup
@@ -257,7 +267,7 @@ function ChatComponent({ initialId, user }: { initialId: string; user: User }) {
 
   return (
     <div className="flex-1 flex flex-col w-full">
-      <Navbar user={user} />
+      <Navbar />
 
       <div ref={messagesChat} className="flex-1 overflow-y-auto w-full">
         <div className="container mx-auto max-w-4xl h-full">
