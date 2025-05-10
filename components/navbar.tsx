@@ -1,22 +1,20 @@
 'use client'
 
-// import Link from 'next/link' // No longer needed
-// import { logoutAction } from '@/actions/logout' // Removed
-// import { SubmitButton } from '@/components/submit-button' // Removed, was only for logout
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-// import type { User } from '@supabase/supabase-js' // Removed
 import { AnimatePresence } from 'motion/react'
 import { useAppLocalStorage } from '@/hooks/use-app-local-storage'
 import { useAppState } from '@/state'
 import { SidebarTrigger } from './ui/sidebar'
 import { ChatName } from './chat-name'
 import { useToast } from '../hooks/use-toast'
+import { signOut, useSession } from 'next-auth/react'
 
-// export default function Navbar({ user }: { user: User }) { // Removed user prop
 export default function Navbar() {
   const { value, setValue } = useAppLocalStorage()
   const chat = useAppState((s) => s.chat)
   const { toast } = useToast()
+  const { data: session, status } = useSession()
 
   return (
     <AnimatePresence>
@@ -26,65 +24,73 @@ export default function Navbar() {
           {chat && <ChatName id={chat.id} initialName={chat.name} />}
         </div>
 
-        {/* {user ? ( */}
-          <div className="flex items-center gap-2">
-            <Button
-              variant={'ghost'}
-              onClick={() => {
-                const email = 'tony@fuzati.com'
-                try {
-                  navigator.clipboard.writeText(email)
-                  toast({
-                    title: 'Email copied to clipboard',
-                    description: 'You can send feedback to this email',
-                  })
-                } catch (error) {
-                  toast({
-                    title: 'Error copying email',
-                    description: `Send me feedback at: ${email}`,
-                  })
-                }
-              }}
-            >
-              Feedback
-            </Button>
-            {value.connectionString && (
-              <AnimatePresence>
-                <Button
-                  variant="secondary"
-                  onClick={() =>
-                    setValue((prev) => ({
-                      ...prev,
-                      connectionString: '',
-                    }))
-                  }
-                >
-                  Change Database
-                </Button>
-              </AnimatePresence>
-            )}
-            {/* Removed Logout form and button
-            <form
-              action={async () => {
-                setValue({
-                  connectionString: '',
-                  openaiApiKey: '',
-                  model: 'gpt-4o-mini',
+        <div className="flex items-center gap-2">
+          <Button
+            variant={'ghost'}
+            onClick={() => {
+              const email = 'tony@fuzati.com'
+              try {
+                navigator.clipboard.writeText(email)
+                toast({
+                  title: 'Email copied to clipboard',
+                  description: 'You can send feedback to this email',
                 })
-
-                await logoutAction()
-              }}
-            >
-              <SubmitButton variant="ghost" pendingText="Logging out...">
+              } catch (error) {
+                toast({
+                  title: 'Error copying email',
+                  description: `Send me feedback at: ${email}`,
+                })
+              }
+            }}
+          >
+            Feedback
+          </Button>
+          
+          {value.connectionString && (
+            <AnimatePresence>
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  setValue((prev) => ({
+                    ...prev,
+                    connectionString: '',
+                  }))
+                }
+              >
+                Change Database
+              </Button>
+            </AnimatePresence>
+          )}
+          
+          {status === 'loading' ? (
+            <Button variant="ghost" disabled>Loading...</Button>
+          ) : session ? (
+            <>
+              {session.user?.name && (
+                <span className="text-sm mr-2">
+                  {session.user.name}
+                </span>
+              )}
+              <Button 
+                variant="ghost" 
+                onClick={() => {
+                  setValue({
+                    connectionString: '',
+                    openaiApiKey: '',
+                    model: 'gpt-4o-mini',
+                  })
+                  signOut({ callbackUrl: '/' })
+                }}
+              >
                 Logout
-              </SubmitButton>
-            </form> */}
-          </div>
-        {/* ) : (
-          <Link href="/login">
-            <Button>Login</Button>
-          </Link>
-        )} */}
+              </Button>
+            </>
+          ) : (
+            <Link href="/login">
+              <Button>Login</Button>
+            </Link>
+          )}
+        </div>
       </nav>
     </AnimatePresence>
   )

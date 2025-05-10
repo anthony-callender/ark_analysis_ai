@@ -3,6 +3,14 @@ import HowItWorks from '@/components/how-it-works'
 import OpenSourceSection from '@/components/open-source-section'
 import { cn } from '@/utils/cn'
 import Link from 'next/link'
+import { getServerSession } from 'next-auth/next'
+import { authOptions } from '@/app/api/auth/[...nextauth]/route'
+import { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Chat With Your Database - Home',
+  description: 'AI-powered database analytics and insights',
+}
 
 const Section = ({
   children,
@@ -17,18 +25,29 @@ const Section = ({
 )
 
 export default async function Index() {
+  const session = await getServerSession(authOptions)
+  
   return (
     <>
       <main className="mt-12 mx-auto">
         <Section>
           <Hero />
-          <div className="flex justify-center mt-8">
+          <div className="flex justify-center mt-8 gap-4">
             <Link
               href="/app"
               className="bg-primary text-primary-foreground hover:bg-primary/90 rounded-md px-6 py-3 font-medium"
             >
               Go to App
             </Link>
+            
+            {!session && (
+              <Link
+                href="/login"
+                className="bg-secondary text-secondary-foreground hover:bg-secondary/90 rounded-md px-6 py-3 font-medium"
+              >
+                Login
+              </Link>
+            )}
           </div>
         </Section>
         <Section className='flex items-center justify-center mt-14'>

@@ -1,24 +1,17 @@
+'use client'
+
 import { ViewTransitions } from 'next-view-transitions'
 import { ThemeSwitcher } from '@/components/theme-switcher'
 import { GeistSans } from 'geist/font/sans'
 import { ThemeProvider } from 'next-themes'
+import { SessionProvider } from 'next-auth/react'
 
 import './globals.css'
 import { TailwindIndicator } from '@/components/tailwind-indicator'
 import { Toaster } from '@/components/ui/toaster'
 import Script from 'next/script'
 
-const defaultUrl = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : 'http://localhost:3000'
-
-export const metadata = {
-  metadataBase: new URL(defaultUrl),
-  title: 'Chat With Your Database',
-  description: 'The AI that really knows your postgres DB',
-}
-
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: {
   children: React.ReactNode
@@ -26,6 +19,10 @@ export default async function RootLayout({
   return (
     <ViewTransitions>
       <html lang="en" className={GeistSans.className} suppressHydrationWarning>
+        <head>
+          <title>Chat With Your Database</title>
+          <meta name="description" content="The AI that really knows your postgres DB" />
+        </head>
         <Script id="crisp-widget" strategy="afterInteractive">
           {`
           window.$crisp=[];window.CRISP_WEBSITE_ID="41a9dc67-1760-4d2c-b1ec-4e8be0ece866";(function(){d=document;s=d.createElement("script");
@@ -38,7 +35,9 @@ export default async function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
-            {children}
+            <SessionProvider>
+              {children}
+            </SessionProvider>
             <ThemeSwitcher />
 
             <TailwindIndicator />

@@ -1,20 +1,22 @@
-import { type NextRequest, NextResponse } from 'next/server'
+import { withAuth } from 'next-auth/middleware'
+import { NextResponse } from 'next/server'
 
-export async function middleware(request: NextRequest) {
-  // No authentication checks - just pass through all requests
-  return NextResponse.next()
-}
+// This function will run before each request to protected routes
+export default withAuth({
+  callbacks: {
+    // Custom authorization logic if needed (e.g., role-based)
+    authorized({ token }) {
+      // Return true if the user should have access
+      return !!token
+    },
+  },
+})
 
+// Specify which routes should be protected
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - images - .svg, .png, .jpg, .jpeg, .gif, .webp
-     * Feel free to modify this pattern to include more paths.
-     */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    // Protected routes
+    '/app/:path*',
+    // Add other protected routes as needed
   ],
 }
