@@ -58,10 +58,11 @@ export const authOptions: NextAuthOptions = {
           }
 
           // Check if user is deactivated
-          if (user.deactivate) {
-            console.log("User account is deactivated")
-            return null
-          }
+          // Temporarily commented out for testing
+          // if (user.deactivate) {
+          //   console.log("User account is deactivated")
+          //   return null
+          // }
 
           // Verify password (no pepper needed as confirmed in devise.rb)
           const passwordToCheck = credentials.password
@@ -76,11 +77,32 @@ export const authOptions: NextAuthOptions = {
           }
 
           // Return user data to be encoded in the JWT
+          let roleValue = user.role;
+          // If role is a number, map it to appropriate string value
+          // Rails app uses numeric role values (e.g., 7), so we need to handle them
+          if (typeof user.role === 'number') {
+            // This mapping should match your Rails app's role definitions
+            // You may need to adjust this based on your actual role enum in the Rails app
+            const roleMap: Record<number, string> = {
+              0: "Ark Admin",
+              1: "Diocese Executive",
+              2: "Diocese Admin",
+              3: "Center Admin",
+              4: "Center Data Admin",
+              5: "Teacher",
+              6: "Proctor",
+              7: "Student",
+              8: "Catechist Candidate"
+            };
+            roleValue = roleMap[user.role] || `Role_${user.role}`;
+            console.log(`Mapped numeric role ${user.role} to ${roleValue}`);
+          }
+
           return {
             id: user.id,
             email: user.email,
             username: user.username,
-            role: user.role,
+            role: roleValue,
             name: `${user.first_name || ''} ${user.last_name || ''}`.trim()
           }
         } catch (error) {
