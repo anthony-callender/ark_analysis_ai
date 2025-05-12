@@ -1516,6 +1516,14 @@ export async function POST(req: Request) {
      8. Present the final SQL query in a code block
      
      IMPORTANT: For diocese filtering, ALWAYS use the complete diocese name as returned by getDioceseNames. 
+
+     IMPORTANT **Direct Query Response Requirement:**
+      - In at least 99% of interactions, if the user's request is related to retrieving data or constructing a query (e.g. "How many users do I have?"), your response must include a SQL query enclosed in a code block. For example, for "How many users do I have?" a correct response would be:
+        
+         \`\`\`sql
+        SELECT COUNT(*) AS total_users
+        FROM users;
+         \`\`\`
      
      Example:
      User request: "What is the average theology score for Dallas?"
@@ -1970,7 +1978,8 @@ export async function POST(req: Request) {
     return new Response('Failed to create stream', { status: 500 })
   }
   
-  const interceptedStream = await interceptStream(originalStream)
+  // Bypass the interceptStream function and directly use the original stream
+  const interceptedStream = originalStream
   
   return new Response(interceptedStream, {
     headers: {

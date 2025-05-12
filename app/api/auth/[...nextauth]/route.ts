@@ -44,7 +44,9 @@ export const authOptions: NextAuthOptions = {
               role, 
               deactivate,
               first_name,
-              last_name
+              last_name,
+              diocese_id,
+              testing_center_id
             FROM users 
             WHERE (email = $1 OR username = $1) 
             LIMIT 1`,
@@ -103,7 +105,9 @@ export const authOptions: NextAuthOptions = {
             email: user.email,
             username: user.username,
             role: roleValue,
-            name: `${user.first_name || ''} ${user.last_name || ''}`.trim()
+            name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+            diocese_id: user.diocese_id,
+            testing_center_id: user.testing_center_id
           }
         } catch (error) {
           console.error("Auth error:", error)
@@ -121,6 +125,8 @@ export const authOptions: NextAuthOptions = {
         token.username = user.username
         token.role = user.role
         token.name = user.name
+        token.diocese_id = user.diocese_id
+        token.testing_center_id = user.testing_center_id
       }
       return token
     },
@@ -131,6 +137,8 @@ export const authOptions: NextAuthOptions = {
         session.user.email = token.email
         session.user.username = token.username
         session.user.role = token.role
+        session.user.diocese_id = token.diocese_id
+        session.user.testing_center_id = token.testing_center_id
       }
       return session
     }

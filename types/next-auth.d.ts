@@ -10,6 +10,8 @@ declare module "next-auth" {
       role: string
       name?: string
       image?: string
+      diocese_id?: number | null
+      testing_center_id?: number | null
     }
   }
 
@@ -19,6 +21,8 @@ declare module "next-auth" {
     username: string
     role: string
     name?: string
+    diocese_id?: number | null
+    testing_center_id?: number | null
   }
 }
 
@@ -29,5 +33,7 @@ declare module "next-auth/jwt" {
     username: string
     role: string
     name?: string
+    diocese_id?: number | null
+    testing_center_id?: number | null
   }
 } 
