@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback, useMemo, memo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Send } from "lucide-react";
+import { Send, Loader2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { Message } from "ai";
 import { useChat } from "@ai-sdk/react";
@@ -252,7 +252,7 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
         title: "Database Connection Missing",
         description:
           "Please set up your database connection string to use the app.",
-        variant: "warning",
+        variant: "default",
         duration: Infinity, // Keep toast until dismissed
       });
     }
@@ -263,7 +263,7 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
       toast({
         title: "OpenAI API Key Missing",
         description: "Please add your OpenAI API key to enable chat functionality.",
-        variant: "warning",
+        variant: "default",
         duration: Infinity, // Keep toast until dismissed
       });
     }
@@ -379,6 +379,75 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
   // Add showSQL state from application store
   const showSQL = useAppState((state) => state.showSQL)
   const setShowSQL = useAppState((state) => state.setShowSQL)
+  
+  // Add state and handler for query correction
+  const [isCorrectingQuery, setIsCorrectingQuery] = useState(false);
+  
+  // Function to send the last assistant message for correction
+  const handleCorrectQuery = async () => {
+    if (!messages.length || isCorrectingQuery) return;
+    
+    // Find the last assistant message
+    const lastAssistantMessageIndex = [...messages].reverse().findIndex(m => m.role === 'assistant');
+    if (lastAssistantMessageIndex === -1) {
+      toast({
+        title: "No assistant messages",
+        description: "There are no assistant messages to correct.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const messageToCorrect = messages[messages.length - 1 - lastAssistantMessageIndex];
+    
+    try {
+      setIsCorrectingQuery(true);
+      
+      const response = await fetch('/api/correct-query', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-connection-string': value.connectionString || '',
+        },
+        body: JSON.stringify({
+          content: messageToCorrect.content,
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      // Create new assistant message with corrected content
+      const correctedMessage = {
+        id: Date.now().toString(),
+        role: 'assistant' as const,
+        content: data.correctedContent,
+      };
+      
+      // Replace the last message with the corrected one
+      if (typeof append === 'function') {
+        append(correctedMessage);
+      }
+      
+      toast({
+        title: "Query corrected",
+        description: "The SQL query has been corrected.",
+      });
+      
+    } catch (error) {
+      console.error("Error correcting query:", error);
+      toast({
+        title: "Error",
+        description: "Failed to correct the query. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCorrectingQuery(false);
+    }
+  };
 
   return (
     <Card className="w-full h-full flex flex-col border-0 rounded-none overflow-hidden relative">
@@ -494,6 +563,25 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
                 Show SQL
               </Label>
             </div>
+            
+            {messages.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCorrectQuery}
+                disabled={isCorrectingQuery || isMainPage}
+                className="text-sm"
+              >
+                {isCorrectingQuery ? (
+                  <>
+                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                    Correcting...
+                  </>
+                ) : (
+                  "Correct Query"
+                )}
+              </Button>
+            )}
           </div>
         </form>
       </CardContent>
