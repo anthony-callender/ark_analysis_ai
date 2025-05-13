@@ -383,13 +383,43 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
   // Add state and handler for query correction
   const [isCorrectingQuery, setIsCorrectingQuery] = useState(false);
   
+  // Function to clean up and fix malformed markdown in corrected responses
+  const cleanCorrectedResponse = (content: string): string => {
+    // First, check if there are malformed backtick blocks
+    if (content.includes("``````sql")) {
+      content = content.replace("``````sql", "```sql");
+    }
+    
+    // Extract just the first SQL block if there are multiple
+    const firstSqlBlockMatch = content.match(/```sql[\s\S]*?```/);
+    if (firstSqlBlockMatch) {
+      // Get text before the SQL block (explanation)
+      const explanationText = content.substring(0, content.indexOf('```sql')).trim();
+      // Return explanation + first SQL block only
+      return explanationText + '\n\n' + firstSqlBlockMatch[0];
+    }
+    
+    // If no SQL block found, find any content before a second set of backticks
+    const multipleSqlBlocks = content.match(/```[\s\S]*?```[\s\S]*?```/);
+    if (multipleSqlBlocks) {
+      // Find the end of the first code block
+      const firstBlockEnd = content.indexOf('```') + 3;
+      const secondBlockStart = content.indexOf('```', firstBlockEnd);
+      
+      // Return just the content up to the end of the first block
+      return content.substring(0, secondBlockStart);
+    }
+    
+    return content;
+  };
+
   // Function to send the last assistant message for correction
-  const handleCorrectQuery = async () => {
+  const handleCorrectQuery = async (forceCorrection = false) => {
     if (!messages.length || isCorrectingQuery) return;
     
     // Find the last assistant message
-    const lastAssistantMessageIndex = [...messages].reverse().findIndex(m => m.role === 'assistant');
-    if (lastAssistantMessageIndex === -1) {
+    const assistantMessages = messages.filter(m => m.role === 'assistant');
+    if (assistantMessages.length === 0) {
       toast({
         title: "No assistant messages",
         description: "There are no assistant messages to correct.",
@@ -398,7 +428,56 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
       return;
     }
     
-    const messageToCorrect = messages[messages.length - 1 - lastAssistantMessageIndex];
+    const messageToCorrect = assistantMessages[assistantMessages.length - 1];
+    
+    // Extract just the SQL code block from the message - improved regex pattern
+    // This looks for ```sql followed by any characters (non-greedy) until the next ```
+    const sqlBlockRegex = /```sql\n([\s\S]*?)\n```/;
+    const sqlMatch = messageToCorrect.content.match(sqlBlockRegex);
+    
+    if (!sqlMatch || !sqlMatch[1]) {
+      console.log("No SQL match found. Content:", messageToCorrect.content);
+      toast({
+        title: "No SQL found",
+        description: "Could not find a SQL code block to correct.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const sqlCode = sqlMatch[1].trim();
+    console.log("Extracted SQL to correct:", sqlCode);
+    
+    // Check if this was likely a message intentionally showing SQL errors
+    // Look for patterns suggesting the user asked for an error example
+    const lastUserMessages = messages
+      .filter(m => m.role === 'user')
+      .slice(-2); // Get last 2 user messages
+      
+    const requestedErrorExample = lastUserMessages.some(m => 
+      m.content.toLowerCase().includes("syntax error") || 
+      m.content.toLowerCase().includes("sql error") ||
+      m.content.toLowerCase().includes("with error") ||
+      m.content.toLowerCase().includes("test something")
+    );
+    
+    if (requestedErrorExample && !forceCorrection) {
+      toast({
+        title: "Possible intentional error example",
+        description: "This may be an example with intentional errors. Click 'Force Correction' if you still want to correct it.",
+        variant: "default",
+        action: (
+          <Button 
+            variant="outline" 
+            onClick={() => handleCorrectQuery(true)}
+          >
+            Force Correction
+          </Button>
+        ),
+        duration: 5000,
+      });
+      return;
+    }
     
     try {
       setIsCorrectingQuery(true);
@@ -410,7 +489,7 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
           'x-connection-string': value.connectionString || '',
         },
         body: JSON.stringify({
-          content: messageToCorrect.content,
+          sqlCode: sqlCode, // Send only the SQL code, not the entire message
         }),
       });
       
@@ -419,12 +498,26 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
       }
       
       const data = await response.json();
+      console.log("Received corrected SQL:", data.correctedSql);
       
-      // Create new assistant message with corrected content
+      // Replace just the SQL block in the original message - with more precise targeting
+      // We're using the exact same regex pattern for replacement consistency
+      const beforeSqlContent = messageToCorrect.content.split(sqlBlockRegex)[0] || '';
+      const afterSqlContent = messageToCorrect.content.split(sqlBlockRegex)[2] || '';
+      
+      const updatedContent = `${beforeSqlContent}` + 
+                             "```sql\n" + 
+                             `${data.correctedSql}` + 
+                             "\n```" + 
+                             `${afterSqlContent}`;
+      
+      console.log("Updated content:", updatedContent);
+      
+      // Create new assistant message with the updated content
       const correctedMessage = {
         id: Date.now().toString(),
         role: 'assistant' as const,
-        content: data.correctedContent,
+        content: updatedContent,
       };
       
       // Replace the last message with the corrected one
@@ -568,7 +661,7 @@ export function ChatWindow({ user, chatId }: ChatWindowProps) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleCorrectQuery}
+                onClick={() => handleCorrectQuery()}
                 disabled={isCorrectingQuery || isMainPage}
                 className="text-sm"
               >

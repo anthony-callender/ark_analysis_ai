@@ -2,6 +2,22 @@ import { createOpenAI } from '@ai-sdk/openai'
 import { generateText } from 'ai'
 import { headers } from 'next/headers'
 
+// Helper function to clean SQL code of any markdown or extra content
+function cleanSqlCode(sql: string): string {
+  console.log("Original SQL response:", sql);
+  
+  // Remove markdown code block markers if they exist
+  let cleaned = sql.replace(/^```sql\n|^```\n|```$/gm, '');
+  
+  // Remove any explanatory text before the SQL (if the model added it despite instructions)
+  if (cleaned.includes("SELECT") && !cleaned.trim().startsWith("SELECT")) {
+    cleaned = cleaned.substring(cleaned.indexOf("SELECT"));
+  }
+  
+  console.log("Cleaned SQL:", cleaned);
+  return cleaned.trim();
+}
+
 export async function POST(req: Request) {
   try {
     const headers_ = await headers()
@@ -16,12 +32,14 @@ export async function POST(req: Request) {
       return new Response('Missing connection string', { status: 400 })
     }
 
-    const { content } = await req.json()
+    const { sqlCode } = await req.json()
     
-    if (!content) {
-      return new Response('No content provided', { status: 400 })
+    if (!sqlCode) {
+      return new Response('No SQL code provided', { status: 400 })
     }
 
+    console.log("SQL Code received by API:", sqlCode);
+    
     const openai = createOpenAI({
       apiKey: openaiApiKey,
     })
@@ -29,23 +47,28 @@ export async function POST(req: Request) {
     const result = await generateText({
       model: openai('gpt-4.1-mini'),
       system: `
-      You are a specialized SQL correction assistant. Your task is to review an entire response 
-      that contains SQL, fix any errors in the SQL query, and return the ENTIRE corrected response.
+      You are a specialized SQL correction assistant focused on PostgreSQL. Your task is to fix errors in SQL code.
       
-      Look carefully at the response and identify SQL code blocks (marked with \`\`\`sql ... \`\`\`).
-      If there are issues with the SQL query, fix them according to PostgreSQL syntax.
+      CRITICAL INSTRUCTIONS:
+      1. Return ONLY the corrected SQL code - no explanations, no comments, no backticks
+      2. Fix syntax errors like missing commas, incorrect keywords, incorrect syntax
+      3. Fix other common errors (column references, table joins, etc.)
+      4. Preserve the overall structure and intent of the query
+      5. Ensure proper SQL statement termination
+      6. Your output should be ONLY the corrected SQL code ready to execute
       
-      Do not change explanatory text outside the SQL code blocks.
-      Keep the same overall structure of the response, just improve the SQL query part.
-      If there are duplicate SQL blocks or explanations, remove the duplicates to ensure the response
-      is clear and non-repetitive.
+      Example input: "SELECT column1 column2 FROM table"
+      Example output: "SELECT column1, column2 FROM table"
       
-      Return the complete corrected response with proper formatting, not just the SQL part.
+      DO NOT preface with explanations. DO NOT wrap in code blocks. ONLY return the SQL code.
       `,
-      prompt: content,
+      prompt: sqlCode,
     })
 
-    return new Response(JSON.stringify({ correctedContent: result.text }), {
+    // Clean the result to ensure only SQL code is returned
+    const correctedSql = cleanSqlCode(result.text);
+    
+    return new Response(JSON.stringify({ correctedSql }), {
       headers: {
         'Content-Type': 'application/json'
       }
