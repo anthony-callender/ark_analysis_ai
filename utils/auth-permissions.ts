@@ -1,6 +1,8 @@
 /**
  * Auth permissions utility for role-based LLM query construction
  */
+'use client'
+
 import { getSession } from 'next-auth/react'
 
 // Role definitions
@@ -26,10 +28,17 @@ export async function getLLMQueryConstraints() {
   const session = await getSession()
   
   if (!session?.user) {
-    throw new Error('User not authenticated')
+    console.warn('No user session found for query constraints')
+    // Return default constraints that won't modify queries
+    return { 
+      hasConstraints: false,
+      roleDescription: "No authenticated user found."
+    }
   }
   
   const user = session.user as SessionUser
+  console.log('User role for constraints:', user.role)
+  console.log('User diocese_id:', user.diocese_id)
   
   // Different constraints based on role
   switch (user.role) {
@@ -41,6 +50,7 @@ export async function getLLMQueryConstraints() {
       }
       
     case ROLES.DIOCESE_ADMIN:
+      console.log(`Setting diocese constraints for ID: ${user.diocese_id}`)
       // Diocese Admin - constrain queries to their diocese
       return {
         hasConstraints: true,
@@ -51,6 +61,7 @@ export async function getLLMQueryConstraints() {
       }
       
     case ROLES.CENTER_ADMIN:
+      console.log(`Setting center constraints for diocese_id: ${user.diocese_id}, center_id: ${user.testing_center_id}`)
       // Center Admin - constrain queries to their testing center
       return {
         hasConstraints: true,
@@ -62,8 +73,12 @@ export async function getLLMQueryConstraints() {
       }
       
     default:
+      console.warn(`Unknown role type: ${user.role}`)
       // Default case - shouldn't happen due to middleware, but just in case
-      throw new Error(`Invalid role: ${user.role}`)
+      return { 
+        hasConstraints: false,
+        roleDescription: `Unknown role: ${user.role}`
+      }
   }
 }
 
